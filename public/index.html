@@ -3,13 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>EXP — Experience Journal</title>
+<title>Jawan's EXP</title>
 <style>
-/* ===== LOOK (CSS). EXP page = black UI, BLOG page = white UI. The page switches by changing data-page on the top element. ===== */
-:root{--bg:#000;--card:#111;--ink:#f4f4f4;--mute:#8a8a8a;--line:#2a2a2a;--acc:#ff8a3d;--on:#000;--acc2:#241a12;--star:#ffb84a;
+/* ===== LOOK (CSS). EXP page = dark UI, BLOG page = light UI. The page switches by changing data-page on the top element. ===== */
+:root{--bg:#4d4d4d;--card:#111;--ink:#f4f4f4;--mute:#8a8a8a;--line:#2a2a2a;--acc:#ff6b6b;--on:#000;--acc2:#241a12;--star:#ef9595;
  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-:root[data-page="blog"]{--bg:#fff;--card:#fff;--ink:#111;--mute:#6b6b6b;--line:#e2e2e2;--acc:#111;--on:#fff;--acc2:#f2f2f2;--star:#e69500}
+
+:root[data-page="blog"]{--bg:#e1e1e1;--card:#fff;--ink:#111;--mute:#6b6b6b;--line:#e2e2e2;--acc:#111;--on:#fff;--acc2:#f2f2f2;--star:#e69500}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
+
 *{box-sizing:border-box}[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .wrap{max-width:720px;margin:0 auto;padding:20px 16px 110px}
