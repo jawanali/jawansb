@@ -126,10 +126,13 @@ const acts = (p, x) => `<div class="acts">${owner && !x.is_public ? '<span class
 const ttl = (p, x) => `<h4>${x.num ? `<a href="/${p}/${x.num}" data-act="go" data-v="${p}/${x.num}">${esc(x.title)}</a>` : esc(x.title)}</h4>`;
 /* --- POST LAYOUT: each post is built from blocks, shown in the order saved on it ("order").
        Posts without one use the default below. (Older posts may have "imgAt" = which block their photos sat under.) --- */
-const ORDER = ['title', 'time', 'tags', 'rating', 'desc', 'photos'];
+// "type" = Type tags; "tags" = People & Location tags
+const ORDER = ['title', 'time', 'type', 'tags', 'rating', 'desc', 'photos'];
 const orderOf = x => {
   let o = x.order;
-  if (!o) { o = ORDER.filter(k => k !== 'photos'); const after = {type: 'tags', tags: 'tags'}[x.imgAt] || x.imgAt || 'desc'; o.splice(o.indexOf(after) + 1, 0, 'photos'); }
+  if (!o) { o = ORDER.filter(k => k !== 'photos'); o.splice(o.indexOf(x.imgAt || 'desc') + 1, 0, 'photos'); }
+  // posts saved back when Type and People/Location were one block: Type goes right before People/Location
+  else if (!o.includes('type')) { o = [...o]; o.splice(o.indexOf('tags'), 0, 'type'); }
   return [...o, ...ORDER.filter(k => !o.includes(k))];   // any block added in the future still shows up
 };
 const card = e => {
@@ -140,7 +143,8 @@ const card = e => {
   const parts = {
     title: ttl('exp', e),
     time: `<div class="top"><span>${s.toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'})} · ${tm(s)}–${tm(en)}</span><span>${dur(e.minutes)} · +${e.minutes} EXP</span></div>`,
-    tags: types + (ptags ? `<div class="ptags">${ptags}</div>` : ''),
+    type: types,
+    tags: ptags ? `<div class="ptags">${ptags}</div>` : '',
     rating: `<div class="rt">${stars(e.rating)}</div>`,
     desc: e.desc ? `<p>${esc(e.desc)}</p>` : '',
     photos: gal(e)
@@ -219,10 +223,10 @@ async function setColor(k, n, v) { const c = {...colors()}; if (v) c[k + ':' + n
 /* --- THE LOG / BLOG FORM (one form, two modes: "e" = experience, "b" = blog post) --- */
 const loc = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
 const goLabel = () => draft.editId ? 'SAVE CHANGES' : draft.kind === 'b' ? 'POST' : 'LOG';
-// Type gets its own line; People and Location share one line. Press Enter after typing a tag.
+// Type is its own block; People and Location share one. Press Enter after typing a tag.
 // While you type, tags you've used before that match show up underneath (#s-types etc.).
 const tfBlock = ([k, l]) => `<div class="tin"><label>${l}</label><div id="c-${k}"></div><input id="i-${k}" data-k="${k}" autocomplete="off"><div class="sug" id="s-${k}" hidden></div></div>`;
-$('tf').innerHTML = tfBlock(KINDS[0]) + `<div class="two">${tfBlock(KINDS[1])}${tfBlock(KINDS[2])}</div>`;
+$('tfType').innerHTML = tfBlock(KINDS[0]); $('tf').innerHTML = `<div class="two">${tfBlock(KINDS[1])}${tfBlock(KINDS[2])}</div>`;
 function drawDraft() {
   KINDS.forEach(([k]) => $('c-' + k).innerHTML = draft[k].map(n => `<span class="chip" style="${ts(k, n)}">${esc(n)}<button class="x" data-act="rmTag" data-k="${k}" data-v="${esc(n)}">✕</button></span>`).join(''));
   $('pick').innerHTML = stars(draft.rating); $('rv').textContent = draft.rating ? draft.rating + ' / 5' : '';
@@ -365,7 +369,7 @@ document.addEventListener('click', ev => {
   }
 });
 // tag boxes: Enter (or a comma) adds what you typed; ↑/↓ pick a suggestion first; Esc hides suggestions
-$('tf').addEventListener('keydown', ev => {
+$('secs').addEventListener('keydown', ev => {
   const k = ev.target.dataset.k; if (!k) return;
   const box = $('s-' + k), opts = box.hidden ? [] : [...box.querySelectorAll('.sg')], i = opts.findIndex(o => o.classList.contains('hi'));
   if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && opts.length) {
@@ -375,9 +379,9 @@ $('tf').addEventListener('keydown', ev => {
   else if (ev.key === 'Enter' || ev.key === ',') { ev.preventDefault(); if (i >= 0) ev.target.value = opts[i].dataset.v; addTag(k); suggest(k); }
   else if (ev.key === 'Escape') box.hidden = true;
 });
-$('tf').addEventListener('input', ev => { if (ev.target.dataset.k) suggest(ev.target.dataset.k); });
-$('tf').addEventListener('mousedown', ev => { if (ev.target.closest('.sug')) ev.preventDefault(); });   // clicking a suggestion keeps you typing in the box
-$('tf').addEventListener('focusout', ev => { if (ev.target.dataset.k) $('s-' + ev.target.dataset.k).hidden = true; });
+$('secs').addEventListener('input', ev => { if (ev.target.dataset.k) suggest(ev.target.dataset.k); });
+$('secs').addEventListener('mousedown', ev => { if (ev.target.closest('.sug')) ev.preventDefault(); });   // clicking a suggestion keeps you typing in the box
+$('secs').addEventListener('focusout', ev => { if (ev.target.dataset.k) $('s-' + ev.target.dataset.k).hidden = true; });
 $('s').addEventListener('input', updExp); $('e').addEventListener('input', updExp);
 // color pickers in Settings: preview live while dragging, save when the picker closes
 $('pgSet').addEventListener('input', ev => { if (ev.target.type === 'color') { const c = ev.target.previousElementSibling; c.style.background = ev.target.value; c.style.color = ink(ev.target.value); } });
