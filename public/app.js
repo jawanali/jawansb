@@ -159,6 +159,16 @@ const tint = e => {
   const bg = blend(TINT_BASE, mixHex(t.map(n => tcol('types', n))), TINT_STRENGTH), fg = ink(bg), mix = p => `color-mix(in srgb, ${fg} ${p}%, ${bg})`;
   return `background:${bg};--ink:${fg};--mute:${mix(82)};--line:${mix(22)};--star-off:${mix(32)}`;
 };
+/* --- FORMATTED TEXT on posts: descriptions saved from the editor ("html") are cleaned by DOMPurify first,
+       so only normal formatting and YouTube players can appear, never hidden scripts. Older posts just have plain text. --- */
+const YT_EMBED = /^https:\/\/www\.youtube(-nocookie)?\.com\/embed\/[\w-]{11}/;
+const rich = h => {
+  if (!h || !window.DOMPurify) return '';   // no cleaner loaded: fall back to the plain-text copy
+  const f = DOMPurify.sanitize(h, {ADD_TAGS: ['iframe'], ADD_ATTR: ['allowfullscreen', 'frameborder', 'allow'], RETURN_DOM_FRAGMENT: true});
+  f.querySelectorAll('iframe').forEach(x => YT_EMBED.test(x.getAttribute('src') || '') || x.remove());
+  f.querySelectorAll('a[href]').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });   // links open in a new tab
+  const d = document.createElement('div'); d.className = 'rich'; d.appendChild(f); return d.outerHTML;
+};
 const card = e => {
   const s = new Date(e.start), en = new Date(e.end), tm = x => x.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
   const grp = (k, w) => tagsOf(e, k).length ? `<span class="grp"><em>${w}</em>${tagsOf(e, k).map(n => chip(k, n)).join('')}</span>` : '';
@@ -170,7 +180,7 @@ const card = e => {
     type: types,
     tags: ptags ? `<div class="ptags">${ptags}</div>` : '',
     rating: `<div class="rt">${stars(e.rating)}</div>`,
-    desc: e.desc ? `<p>${esc(e.desc)}</p>` : '',
+    desc: rich(e.html) || (e.desc ? `<p>${esc(e.desc)}</p>` : ''),
     photos: gal(e)
   };
   const tn = tint(e);
@@ -178,7 +188,7 @@ const card = e => {
 };
 const bcard = p => {
   const parts = {title: ttl('blog', p), time: `<div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>`,
-    desc: p.body ? `<p>${esc(p.body)}</p>` : '', photos: gal(p)};
+    desc: rich(p.html) || (p.body ? `<p>${esc(p.body)}</p>` : ''), photos: gal(p)};
   return `<div class="card entry" id="b-${p.id}">${orderOf(p).map(k => parts[k] || '').join('')}${acts('blog', p)}</div>`;
 };
 
@@ -342,7 +352,7 @@ function openModal(kind, old) {
   if (old) draft = {...draft, rating: old.rating || 0, imgs: (old.images || []).map((r, i) => ({ref: r, url: imgSrc(r), h: (old.imgH || [])[i] || null})), editId: old.id, old, ...Object.fromEntries(KINDS.map(([k]) => [k, [...tagsOf(old, k)]]))};
   const now = new Date();
   $('s').value = loc(old && old.start ? new Date(old.start) : new Date(now - 36e5)); $('e').value = loc(old && old.end ? new Date(old.end) : now);
-  $('t').value = old ? old.title : ''; $('d').value = old ? (old.desc || old.body || '') : ''; $('fi').value = '';
+  $('t').value = old ? old.title : ''; edSet(old); $('fi').value = '';
   document.querySelectorAll('.xe').forEach(x => x.hidden = kind === 'b');
   $('mh').textContent = (old && !wasDraft() ? 'Edit ' : 'New ') + (kind === 'b' ? 'post' : 'experience') + (wasDraft() ? ' · draft' : '');
   $('dl').textContent = kind === 'b' ? 'Body' : 'Description';
@@ -361,6 +371,43 @@ async function shrink(file) {
   if (!b) throw new Error('encode');
   return b;
 }
+/* --- THE DESCRIPTION EDITOR (Quill): fonts, sizes, bold/italic/underline, lists, quotes, links, videos.
+       Pasting a YouTube link turns it into an embedded player. If Quill fails to load, the plain text box (#d) is used instead. --- */
+const Q = window.Quill ? (() => {
+  const Font = Quill.import('formats/font'); Font.whitelist = ['serif', 'typewriter', 'display', 'mono']; Quill.register(Font, true);
+  $('d').remove();
+  return new Quill('#ed', {theme: 'snow', modules: {toolbar: [
+    [{font: [false, 'serif', 'typewriter', 'display', 'mono']}, {size: ['small', false, 'large', 'huge']}],
+    ['bold', 'italic', 'underline', 'strike'], [{list: 'ordered'}, {list: 'bullet'}], ['blockquote', 'link', 'video'], ['clean']
+  ]}});
+})() : ($('ed').remove(), $('d').hidden = false, null);
+// Any YouTube address (youtube.com/watch, youtu.be, /shorts/, /live/, with or without a ?t= start time) -> its embed address
+function ytEmbed(s) {
+  let u; try { u = new URL(s.trim()); } catch (x) { return null; }
+  const host = u.hostname.replace(/^(www|m|music)\./, ''); let id = null;
+  if (host === 'youtu.be') id = u.pathname.slice(1);
+  else if (host === 'youtube.com' || host === 'youtube-nocookie.com') id = u.searchParams.get('v') || (u.pathname.match(/^\/(shorts|embed|live)\/([\w-]+)/) || [])[2];
+  if (!/^[\w-]{11}$/.test(id || '')) return null;
+  const t = u.searchParams.get('t') || u.searchParams.get('start') || '';
+  const sec = (t.match(/\d+[hms]?/g) || []).reduce((a, p) => a + parseInt(p) * ({h: 3600, m: 60}[p.slice(-1)] || 1), 0);   // "90", "90s", "1m30s"
+  return `https://www.youtube-nocookie.com/embed/${id}${sec ? '?start=' + sec : ''}`;
+}
+if (Q) Q.root.addEventListener('paste', ev => {
+  const url = ytEmbed(ev.clipboardData.getData('text/plain')); if (!url) return;   // not a YouTube link: paste normally
+  ev.preventDefault(); ev.stopImmediatePropagation();
+  let at = (Q.getSelection(true) || {index: Q.getLength() - 1}).index;
+  const [line, off] = Q.getLine(at); if (line && off > 0) at = Q.getIndex(line) + line.length();   // mid-line: put the video after this line instead of splitting it
+  Q.insertEmbed(at, 'video', url, 'user'); Q.setSelection(at + 1, 0, 'user');
+}, true);
+// put a post's text into the editor / read it back out (html = formatted version, text = plain copy kept alongside it)
+function edSet(x) {
+  const t = x ? (x.desc || x.body || '') : '';
+  if (!Q) { $('d').value = t; return; }
+  if (x && x.html) Q.clipboard.dangerouslyPasteHTML(x.html); else Q.setText(t);
+  Q.history.clear();
+}
+// html = the editor's own HTML (Quill's getSemanticHTML() export turns spaces into &nbsp; and videos into plain links)
+const edGet = () => Q ? {text: Q.getText().trim(), html: Q.getLength() > 1 ? Q.root.innerHTML : ''} : {text: $('d').value.trim(), html: ''};
 $('fi').addEventListener('change', async ev => {
   const files = [...ev.target.files];
   for (const f of files) {
@@ -380,13 +427,13 @@ async function save(asDraft) {
   const images = [];
   try { for (const im of draft.imgs) { im.ref = im.ref || await upImg(im.blob); images.push(im.ref); } }   // remember uploads, so saving again doesn't re-upload
   catch (x) { return fail('Photo upload failed: ' + x.message); }
-  const id = draft.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), d = $('d').value.trim(), pub = $('pub').checked;
+  const id = draft.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), {text: d, html} = edGet(), pub = $('pub').checked;
   const iso = x => isNaN(x) ? null : x.toISOString(), order = [...$('secs').children].map(x => x.dataset.sec), imgH = draft.imgs.map(im => im.h || null);
   // a draft is always private (it remembers your Public choice for later) and has no number; publishing gives it the next number
   const extra = asDraft ? {draft: true, is_public: false, wantPublic: pub, saved: new Date().toISOString()}
     : {is_public: pub, num: (draft.old && draft.old.num) || nextNum(b ? posts() : ents())};
-  const o = b ? {kind: 'post', id, ...extra, title: t, body: d, images, imgH, order, created: draft.old && !wasDraft() ? draft.old.created : new Date().toISOString()}
-    : {id, ...extra, title: t, desc: d, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order};
+  const o = b ? {kind: 'post', id, ...extra, title: t, body: d, html, images, imgH, order, created: draft.old && !wasDraft() ? draft.old.created : new Date().toISOString()}
+    : {id, ...extra, title: t, desc: d, html, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order};
   const ok = await put(o);
   if (!ok) return fail('Could not save. Are you still logged in?');
   const gone = draft.old ? (draft.old.images || []).filter(i => !images.includes(i)) : [];

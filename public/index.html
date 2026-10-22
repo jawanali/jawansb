@@ -6,7 +6,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Jawan's EXP</title>
 
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400&family=Special+Elite&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap">
+<!-- Quill = the text editor for descriptions; its stylesheet must load before ours so ours can restyle it -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="stylesheet" href="/style.css">
 
 </head>
@@ -73,7 +75,7 @@
       <div class="sec xe" data-sec="type"><span class="grip" title="Drag to move" aria-hidden="true">⠿</span><div id="tfType"></div></div>
       <div class="sec xe" data-sec="tags"><span class="grip" title="Drag to move" aria-hidden="true">⠿</span><div id="tf"></div></div>
       <div class="sec xe" data-sec="rating"><span class="grip" title="Drag to move" aria-hidden="true">⠿</span><label>Rating <span id="rv" style="text-transform:none;letter-spacing:0"></span></label><div id="pick" class="pk"></div></div>
-      <div class="sec" data-sec="desc"><span class="grip" title="Drag to move" aria-hidden="true">⠿</span><label id="dl">Description</label><textarea id="d"></textarea></div>
+      <div class="sec" data-sec="desc"><span class="grip" title="Drag to move" aria-hidden="true">⠿</span><label id="dl">Description</label><div id="ed"></div><textarea id="d" hidden></textarea></div>
       <div class="sec" data-sec="photos"><span class="grip" title="Drag to move" aria-hidden="true">⠿</span><label>Photos</label><div id="ph"></div><input id="fi" type="file" accept="image/*" multiple></div>
     </div>
     <label class="chk"><input id="pub" type="checkbox"> Public (anyone visiting your site can see this)</label>
@@ -92,6 +94,9 @@
   <button class="link" data-act="closelogin" style="display:block;margin:12px auto 0">Cancel</button>
 </div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.100.1/dist/umd/supabase.js"></script>
+<!-- Quill: the description editor. DOMPurify: cleans saved formatting before showing it on a post. -->
+<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
 
 <script src="/app.js"></script>
 </body>

@@ -671,3 +671,52 @@ textarea{
 .tinted{
   border-color:transparent
 }
+
+/* ===== DESCRIPTION EDITOR (Quill) + FORMATTED TEXT ON POSTS ===== */
+/* the fonts and sizes you can pick; used both in the editor and on posts */
+.ql-font-serif{font-family:Georgia,"Times New Roman",serif}
+.ql-font-typewriter{font-family:"Special Elite","Courier New",monospace}
+.ql-font-display{font-family:"Playfair Display",Georgia,serif}
+.ql-font-mono{font-family:ui-monospace,Menlo,monospace}
+.ql-size-small{font-size:.8em}
+.ql-size-large{font-size:1.4em}
+.ql-size-huge{font-size:2em}
+
+/* the editor: toolbar and writing area in the page's own colors, sharp corners */
+.ql-snow,.ql-snow *{border-radius:0!important}
+.ql-toolbar.ql-snow{border:1px solid var(--line);background:var(--bg);padding:6px}
+.ql-container.ql-snow{border:1px solid var(--line);border-top:0;background:var(--bg);color:var(--ink);font:inherit;font-size:15px}
+.ql-editor{min-height:150px;max-height:55vh;overflow-y:auto;line-height:1.5}
+.ql-snow .ql-stroke{stroke:var(--ink)}
+.ql-snow .ql-fill{fill:var(--ink)}
+.ql-snow .ql-picker{color:var(--ink)}
+.ql-snow .ql-picker-options{background:var(--panel);border-color:var(--line)!important}
+.ql-snow.ql-toolbar button:hover .ql-stroke,.ql-snow.ql-toolbar button.ql-active .ql-stroke,
+.ql-snow .ql-picker-label:hover .ql-stroke,.ql-snow .ql-picker-label.ql-active .ql-stroke{stroke:var(--acc)}
+.ql-snow.ql-toolbar button:hover .ql-fill,.ql-snow.ql-toolbar button.ql-active .ql-fill{fill:var(--acc)}
+.ql-snow.ql-toolbar button:hover,.ql-snow .ql-picker-label:hover,.ql-snow .ql-picker-label.ql-active,.ql-snow .ql-picker-item:hover,.ql-snow .ql-picker-item.ql-selected{color:var(--acc)}
+.ql-snow .ql-tooltip{background:var(--panel);color:var(--ink);border-color:var(--line);box-shadow:0 4px 14px rgba(0,0,0,.35);z-index:4}
+.ql-snow .ql-tooltip input[type=text]{width:220px;padding:4px 6px}
+/* names shown in the Font menu (Quill only knows the built-in ones) */
+.ql-snow .ql-picker.ql-font .ql-picker-label::before,.ql-snow .ql-picker.ql-font .ql-picker-item::before{content:"Sans"}
+.ql-snow .ql-picker.ql-font [data-value=serif]::before{content:"Serif"!important;font-family:Georgia,serif}
+.ql-snow .ql-picker.ql-font [data-value=typewriter]::before{content:"Typewriter"!important;font-family:"Special Elite",monospace}
+.ql-snow .ql-picker.ql-font [data-value=display]::before{content:"Display"!important;font-family:"Playfair Display",serif}
+.ql-snow .ql-picker.ql-font [data-value=mono]::before{content:"Mono"!important;font-family:ui-monospace,Menlo,monospace}
+.ql-snow .ql-picker.ql-font{width:118px}
+
+/* YouTube players: full width, video-shaped */
+.ql-editor .ql-video,.rich iframe{display:block;width:100%;aspect-ratio:16/9;height:auto;border:0;margin:8px 0}
+
+/* formatted descriptions on posts */
+.rich{margin:4px 0 8px;line-height:1.5;overflow-wrap:anywhere}
+.rich p{margin:0;white-space:pre-wrap}
+.rich ul,.rich ol{margin:4px 0;padding-left:1.4em}
+.rich blockquote{margin:6px 0;padding-left:12px;border-left:3px solid var(--mute);color:var(--mute)}
+.rich a{color:inherit;text-decoration:underline}
+/* Quill writes every list as <ol>; each item says whether it's a bullet or a number */
+.rich ol{counter-reset:qn}
+.rich li[data-list=bullet]{list-style-type:disc;counter-set:qn 0}   /* a bullet restarts the numbering after it */
+.rich li[data-list=ordered]{list-style-type:none;counter-increment:qn}
+.rich li[data-list=ordered]::before{content:counter(qn) ". ";display:inline-block;width:1.4em;margin-left:-1.4em}
+.rich .ql-ui{display:none}
