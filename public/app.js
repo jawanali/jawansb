@@ -28,7 +28,13 @@ function ink(bg) {
   return best[1] >= 4.5 ? best[0] : best[2];
 }
 const auto = n => { let x = 0; for (const c of n) x = (x * 31 + c.charCodeAt(0)) >>> 0; return hsl(x % 360, 62, 52); };
-const tcol = (k, n) => colors()[k + ':' + n] || auto(k + n);
+/* --- TAG NAMES IGNORE CAPITALS: "Food" and "food" are the same tag. Each tag is shown and colored using the first
+       spelling found on the site (CANON, rebuilt on every load), so existing tags keep their colors. --- */
+const key = n => n.toLowerCase();
+let CANON = {};
+const canon = (k, n) => CANON[k + ':' + key(n)] || n;
+const uniq = (k, names) => [...new Map(names.map(n => [key(n), canon(k, n)])).values()];   // one per tag, ignoring capitals
+const tcol = (k, n) => { const c = colors(), hit = Object.keys(c).find(x => key(x) === key(k + ':' + n)); return hit ? c[hit] : auto(k + canon(k, n)); };
 const ts = (k, n) => { const b = tcol(k, n); return `background:${b};color:${ink(b)}`; };
 const chip = (k, n) => `<span class="chip" style="${ts(k, n)}" data-act="tagflt" data-k="${k}" data-v="${esc(n)}" title="Show only “${esc(n)}”">${esc(n)}</span>`;
 
@@ -43,7 +49,9 @@ async function load() {
   if (!sb) { $('status').textContent = 'Could not load Supabase'; return; }
   const {data, error} = await sb.from('items').select('*');   // visitors only receive public rows; you receive everything
   if (error) { flash('Could not load: ' + error.message); return; }
-  all = data.map(toDoc); loaded = true; render(); if (!$('modal').hidden) drawDrafts();
+  all = data.map(toDoc); loaded = true;
+  CANON = {}; ents().forEach(e => KINDS.forEach(([k]) => tagsOf(e, k).forEach(n => CANON[k + ':' + key(n)] ??= n)));
+  render(); if (!$('modal').hidden) drawDrafts();
   if (owner) backfill();
 }
 async function init() {
@@ -138,6 +146,19 @@ const orderOf = x => {
   else if (!o.includes('type')) { o = [...o]; o.splice(o.indexOf('tags'), 0, 'type'); }
   return [...o, ...ORDER.filter(k => !o.includes(k))];   // any block added in the future still shows up
 };
+/* --- TYPE-TAG TINT: an experience's box gets a soft wash of its Type tag's color (several Types: the average of their colors),
+       blended into the normal slate box. Text and icons switch to a shade that stays readable on it (ink(), the same rule tag chips use).
+       Posts with no Type keep the normal box color: --card in style.css (#3a435eca on EXP, a slightly see-through slate).
+       TINT_STRENGTH = how much tag color goes in (0 = none, 1 = the full tag color; it was 1 for a day and felt too loud).
+       Don't like it at all? Set TINT_CARDS to false and every box goes back to that normal color. --- */
+const TINT_CARDS = true, TINT_STRENGTH = 0.3, TINT_BASE = '#3a435e';   // TINT_BASE = the normal box color, without its see-through part
+const mixHex = l => '#' + [0, 1, 2].map(i => Math.round(l.reduce((a, c) => a + h2r(c)[i], 0) / l.length).toString(16).padStart(2, '0')).join('');
+const blend = (a, b, t) => '#' + [0, 1, 2].map(i => Math.round(h2r(a)[i] * (1 - t) + h2r(b)[i] * t).toString(16).padStart(2, '0')).join('');
+const tint = e => {
+  const t = tagsOf(e, 'types'); if (!TINT_CARDS || !t.length) return '';
+  const bg = blend(TINT_BASE, mixHex(t.map(n => tcol('types', n))), TINT_STRENGTH), fg = ink(bg), mix = p => `color-mix(in srgb, ${fg} ${p}%, ${bg})`;
+  return `background:${bg};--ink:${fg};--mute:${mix(82)};--line:${mix(22)};--star-off:${mix(32)}`;
+};
 const card = e => {
   const s = new Date(e.start), en = new Date(e.end), tm = x => x.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
   const grp = (k, w) => tagsOf(e, k).length ? `<span class="grp"><em>${w}</em>${tagsOf(e, k).map(n => chip(k, n)).join('')}</span>` : '';
@@ -152,7 +173,8 @@ const card = e => {
     desc: e.desc ? `<p>${esc(e.desc)}</p>` : '',
     photos: gal(e)
   };
-  return `<div class="card entry" id="e-${e.id}">${orderOf(e).map(k => parts[k] || '').join('')}${acts('exp', e)}</div>`;
+  const tn = tint(e);
+  return `<div class="card entry${tn ? ' tinted' : ''}" id="e-${e.id}"${tn ? ` style="${tn}"` : ''}>${orderOf(e).map(k => parts[k] || '').join('')}${acts('exp', e)}</div>`;
 };
 const bcard = p => {
   const parts = {title: ttl('blog', p), time: `<div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>`,
@@ -162,7 +184,7 @@ const bcard = p => {
 
 function render() {
   const E = ents(), filtered = KINDS.some(([k]) => sel[k].size);
-  const f = E.filter(e => KINDS.every(([k]) => !sel[k].size || tagsOf(e, k).some(t => sel[k].has(t)))).sort(cmp), sh = agg(f);
+  const f = E.filter(e => KINDS.every(([k]) => !sel[k].size || tagsOf(e, k).some(t => sel[k].has(key(t))))).sort(cmp), sh = agg(f);
   // page switching + theme
   document.documentElement.dataset.page = page === 'blog' ? 'blog' : 'exp';
   $('pgExp').hidden = page !== 'exp'; $('pgBlog').hidden = page !== 'blog'; $('pgSet').hidden = page !== 'set';
@@ -175,9 +197,9 @@ function render() {
   $('fcount').textContent = filtered ? ' · ' + KINDS.reduce((n, [k]) => n + sel[k].size, 0) + ' active' : '';
   // filter buttons, colored like their tags, with each tag's own EXP and QoL
   const rows = ([k, l]) => {
-    const m = {}; E.forEach(e => tagsOf(e, k).forEach(n => (m[n] = m[n] || []).push(e)));
+    const m = {}; E.forEach(e => tagsOf(e, k).forEach(n => { n = canon(k, n); (m[n] = m[n] || []).push(e); }));
     const r = Object.entries(m).map(([n, v]) => [n, agg(v)]).sort((a, b) => b[1].exp - a[1].exp)
-      .map(([n, a]) => `<button class="tag ftag ${sel[k].has(n) ? 'on' : ''}" style="${ts(k, n)};border-color:transparent" data-act="flt" data-k="${k}" data-v="${esc(n)}" title="${a.exp} EXP · ${a.qol.toFixed(2)} QoL"><b>${esc(n)}</b><span>${a.exp} · ${a.qol.toFixed(2)}</span></button>`).join('');
+      .map(([n, a]) => `<button class="tag ftag ${sel[k].has(key(n)) ? 'on' : ''}" style="${ts(k, n)};border-color:transparent" data-act="flt" data-k="${k}" data-v="${esc(n)}" title="${a.exp} EXP · ${a.qol.toFixed(2)} QoL"><b>${esc(n)}</b><span>${a.exp} · ${a.qol.toFixed(2)}</span></button>`).join('');
     return `<h3>${l.toUpperCase()}</h3><div class="tl ftl">${r || '<span class="mute">Nothing yet.</span>'}</div>`;
   };
   const opt = (v, l) => `<button class="tag ${sortBy === v ? 'on' : ''}" data-act="sortBy" data-v="${v}">${l}</button>`;
@@ -218,7 +240,7 @@ $('tq').addEventListener('input', tagSearch);
 function renderSet() {
   const E = ents();
   $('pgSet').innerHTML = `<button class="link" data-act="go" data-v="exp">← Back</button><h2>Edit tags</h2><p class="mute">Pick a color for each tag. The text color is chosen automatically so it stays readable.</p>` +
-    KINDS.map(([k, l]) => { const names = [...new Set(E.flatMap(e => tagsOf(e, k)))].sort();
+    KINDS.map(([k, l]) => { const names = uniq(k, E.flatMap(e => tagsOf(e, k))).sort((a, b) => key(a).localeCompare(key(b)));
       return `<h3>${l.toUpperCase()}</h3>` + (names.map(n => `<div class="srow"><span class="chip" style="${ts(k, n)}">${esc(n)}</span><input type="color" value="${tcol(k, n)}" data-k="${k}" data-v="${esc(n)}"><button class="link" data-act="resetc" data-k="${k}" data-v="${esc(n)}">Reset</button></div>`).join('') || '<p class="mute">No tags yet.</p>'); }).join('');
 }
 async function setColor(k, n, v) { const c = {...colors()}; if (v) c[k + ':' + n] = v; else delete c[k + ':' + n]; await put({id: 'settings', kind: 'settings', colors: c}); }
@@ -260,6 +282,13 @@ document.addEventListener('pointermove', ev => {
   const s = 1 + ((ev.clientX - x) * w + (ev.clientY - y) * h) / (w * w + h * h);   // how far you've dragged along the corner's diagonal
   img.style.height = Math.round(Math.max(60, Math.min(h * s, h * maxW / w, 1200))) + 'px';
 });
+// Double-click a photo on a post: grow it to the full width of the post. Double-click again to put it back.
+document.addEventListener('dblclick', ev => {
+  const img = ev.target.closest('.gal .th'); if (!img) return;
+  if ('h0' in img.dataset) { img.style.height = img.dataset.h0; delete img.dataset.h0; return; }
+  img.dataset.h0 = img.style.height;
+  img.style.height = Math.round(img.closest('.gal').clientWidth * img.naturalHeight / img.naturalWidth) + 'px';
+});
 const rzEnd = () => {
   if (!rzDrag) return;
   const pv = rzDrag.img.closest('.pv'); if (pv) draft.imgs[+pv.dataset.i].h = parseInt(rzDrag.img.style.height);   // in the form: remember it
@@ -276,7 +305,7 @@ function drawDrafts() {
 }
 function suggest(k) {
   const q = $('i-' + k).value.trim().toLowerCase(), box = $('s-' + k);
-  const known = [...new Set(ents().flatMap(e => tagsOf(e, k)))].filter(n => !draft[k].includes(n));
+  const known = uniq(k, ents().flatMap(e => tagsOf(e, k))).filter(n => !draft[k].some(x => key(x) === key(n)));
   const starts = n => n.toLowerCase().startsWith(q);
   const hits = q ? known.filter(n => n.toLowerCase().includes(q)).sort((a, b) => starts(b) - starts(a)).slice(0, 6) : [];
   box.innerHTML = hits.map(n => `<button type="button" class="sg" data-act="pick" data-k="${k}" data-v="${esc(n)}">${esc(n)}</button>`).join('');
@@ -303,8 +332,8 @@ function updExp() { const m = Math.round((new Date($('e').value) - new Date($('s
 function addTag(k) {
   const el = $('i-' + k), v = el.value.trim().replace(/,$/, '').trim(); el.value = '';
   if (!v) return;
-  const known = [...new Set(ents().flatMap(e => tagsOf(e, k)))], c = known.find(x => x.toLowerCase() === v.toLowerCase()) || v;
-  if (!draft[k].includes(c)) draft[k].push(c);
+  const c = canon(k, v);   // typed "FOOD" but "Food" already exists: use "Food"
+  if (!draft[k].some(x => key(x) === key(c))) draft[k].push(c);
   drawDraft();
 }
 function openModal(kind, old) {
@@ -385,7 +414,7 @@ async function copyLink(v) {
 /* --- CLICKS: one listener handles every button, based on its data-act label --- */
 document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-act]'); if (!b) return;
-  const a = b.dataset.act, v = b.dataset.v, k = b.dataset.k, tog = (set) => set.has(v) ? set.delete(v) : set.add(v);
+  const a = b.dataset.act, v = b.dataset.v, k = b.dataset.k, tog = set => set.has(key(v)) ? set.delete(key(v)) : set.add(key(v));   // filters store tag names in lowercase
   if (a === 'go') { if (ev.metaKey || ev.ctrlKey) return; ev.preventDefault(); nav('/' + v); }   // Cmd/Ctrl-click still opens a new tab
   else if (a === 'settings') nav('/settings');
   else if (a === 'open') openModal(page === 'blog' ? 'b' : 'e');
@@ -395,7 +424,7 @@ document.addEventListener('click', ev => {
   else if (a === 'loaddraft') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); $('drf').open = true; }
   else if (a === 'flt') { tog(sel[k]); render(); }
   else if (a === 'tagflt') {   // tag on an entry: filter by it, or clear that filter if it's already on
-    tog(sel[k]); const on = sel[k].has(v); if (on) fsOpen(true);
+    tog(sel[k]); const on = sel[k].has(key(v)); if (on) fsOpen(true);
     if (focus) nav('/exp'); else { render(); if (on) scrollTo(0, 0); }
   }
   else if (a === 'pick') { $('i-' + k).value = v; addTag(k); suggest(k); }   // clicked a tag suggestion

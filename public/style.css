@@ -662,3 +662,12 @@ textarea{
 .go2:disabled,.go:disabled{
   opacity:.6;cursor:default
 }
+
+/* ===== TINTED POSTS (box washed with its Type tag's color; see TINT_CARDS in app.js) =====
+   Text uses the card's own --ink (set per post). */
+.entry{
+  color:var(--ink)
+}
+.tinted{
+  border-color:transparent
+}
