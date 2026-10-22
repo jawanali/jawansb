@@ -448,6 +448,11 @@ h3{
   padding:18px
 }
 
+/* the New/Edit experience window is wider than the login box, so the text editor's toolbar fits on one line */
+#modal .modal{
+  max-width:680px
+}
+
 .mh{
   margin:0 0 4px;
   font-size:18px;
