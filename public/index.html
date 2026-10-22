@@ -50,7 +50,9 @@
       </div>
     </section>
     <div id="fsum" class="mute" style="margin-top:10px"></div>
-    <details class="fs"><summary>Filter &amp; sort<span id="fcount"></span></summary><div id="tags"></div></details>
+    <details class="fs" id="fs"><summary>Filter &amp; sort<span id="fcount"></span></summary>
+      <div class="fsb"><input id="tq" class="tq" placeholder="Search tags…" autocomplete="off"><div id="tags"></div></div>
+    </details>
    </aside>
    <div>
     <h2>Journal</h2>
@@ -78,7 +80,6 @@
     <button class="link" data-act="close" style="display:block;margin:12px auto 0">Cancel</button>
   </div>
 </div>
-<div id="lb" class="lb" hidden data-act="unzoom"><img alt=""></div>
 <div id="toast" class="toast" hidden></div>
 <div id="login" class="ov" hidden><div class="modal">
   <h3 class="mh">Owner login</h3>

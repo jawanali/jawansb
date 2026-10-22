@@ -109,11 +109,11 @@ const cmp = (a, b) => {
 };
 const dirBtn = () => {
   const d = sortDir === 'desc', ar = d ? '<path d="M3 16l3 3 3-3"/>' : '<path d="M3 8l3-3 3 3"/>', bars = d ? 'M12 6h9M12 12h6M12 18h3' : 'M12 6h3M12 12h6M12 18h9';
-  return `<button class="tag ico" data-act="sortDir" aria-label="${d ? 'Descending' : 'Ascending'}, tap to reverse" title="${d ? 'Descending' : 'Ascending'}: tap to reverse"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14"/>${ar}<path d="${bars}"/></svg></button>`;
+  return `<button class="tag ico" data-act="sortDir" aria-label="${d ? 'Descending' : 'Ascending'}, tap to reverse" title="${d ? 'Descending' : 'Ascending'}: tap to reverse"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14"/>${ar}<path d="${bars}"/></svg></button>`;
 };
 
 /* --- DRAWING THE SCREEN --- */
-const gal = e => (e.images || []).length ? `<div class="gal">${e.images.map(i => `<img class="th" data-act="zoom" loading="lazy" alt="" src="${esc(imgSrc(i))}">`).join('')}</div>` : '';
+const gal = e => (e.images || []).length ? `<div class="gal">${e.images.map(i => `<img class="th" loading="lazy" alt="" src="${esc(imgSrc(i))}">`).join('')}</div>` : '';
 const acts = (p, x) => (owner ? `<button class="link" data-act="edit" data-v="${x.id}" style="margin-right:12px">Edit</button><button class="link" data-act="del" data-v="${x.id}" style="margin-right:12px">Delete</button>` : '') + (owner && !x.is_public ? '<span class="pill" style="margin-right:12px">Private</span>' : '') + `<button class="link" data-act="link" data-v="/${p}${x.num ? '/' + x.num : ''}">Copy link</button>`;
 // Clicking a title opens that item on its own page (/exp/3)
 const ttl = (p, x) => `<h4>${x.num ? `<a href="/${p}/${x.num}" data-act="go" data-v="${p}/${x.num}">${esc(x.title)}</a>` : esc(x.title)}</h4>`;
@@ -153,11 +153,12 @@ function render() {
   const rows = ([k, l]) => {
     const m = {}; E.forEach(e => tagsOf(e, k).forEach(n => (m[n] = m[n] || []).push(e)));
     const r = Object.entries(m).map(([n, v]) => [n, agg(v)]).sort((a, b) => b[1].exp - a[1].exp)
-      .map(([n, a]) => `<button class="tag ${sel[k].has(n) ? 'on' : ''}" style="${ts(k, n)};border-color:transparent" data-act="flt" data-k="${k}" data-v="${esc(n)}"><b>${esc(n)}</b><span>${a.exp} EXP · ${a.qol.toFixed(2)} QoL</span></button>`).join('');
-    return `<h3>${l.toUpperCase()} FILTER</h3><div class="tl">${r || '<span class="mute">Nothing yet.</span>'}</div>`;
+      .map(([n, a]) => `<button class="tag ftag ${sel[k].has(n) ? 'on' : ''}" style="${ts(k, n)};border-color:transparent" data-act="flt" data-k="${k}" data-v="${esc(n)}" title="${a.exp} EXP · ${a.qol.toFixed(2)} QoL"><b>${esc(n)}</b><span>${a.exp} · ${a.qol.toFixed(2)}</span></button>`).join('');
+    return `<h3>${l.toUpperCase()}</h3><div class="tl ftl">${r || '<span class="mute">Nothing yet.</span>'}</div>`;
   };
   const opt = (v, l) => `<button class="tag ${sortBy === v ? 'on' : ''}" data-act="sortBy" data-v="${v}">${l}</button>`;
-  $('tags').innerHTML = KINDS.map(rows).join('') + `<h3>SORT BY</h3><div class="tl">${opt('date', 'Date')}${opt('exp', 'EXP')}${opt('rating', 'Rating')}<span style="width:14px"></span>${dirBtn()}</div>`;
+  $('tags').innerHTML = KINDS.map(rows).join('') + `<h3>SORT BY</h3><div class="tl srt">${opt('date', 'Date')}${opt('exp', 'EXP')}${opt('rating', 'Rating')}${dirBtn()}</div>`;
+  tagSearch();
   // journal + blog ("focus" is set when someone opened one item by its link: its number, or its id from an old #e-/#b- link)
   const one = (p, list) => {
     if (!focus || page !== p) return list;
@@ -173,6 +174,23 @@ function render() {
   $('blog').innerHTML = (page === 'blog' ? back('post') : '') + (one('blog', P).map(bcard).join('') || none('post', `<p class="mute">No posts yet.${owner ? ' Tap “+ Blog” to write one.' : ''}</p>`));
   if (page === 'set') renderSet();
 }
+/* --- FILTER MENU: slides open and shut instead of snapping. The search box hides tags that don't match what you type. --- */
+function fsOpen(want) {
+  const d = $('fs'), body = d.querySelector('.fsb');
+  if (d.open === want || d.dataset.busy) return;
+  d.dataset.busy = 1; if (want) d.open = true;
+  const h = body.scrollHeight + 'px';
+  body.style.overflow = 'hidden';
+  const an = body.animate({height: want ? ['0px', h] : [h, '0px'], opacity: want ? [0, 1] : [1, 0]}, {duration: 260, easing: 'ease', fill: 'forwards'});
+  // finish on a timer rather than waiting for the animation, so the menu can never get stuck half-open
+  setTimeout(() => { if (!want) d.open = false; an.cancel(); body.style.overflow = ''; delete d.dataset.busy; }, 270);
+}
+$('fs').querySelector('summary').addEventListener('click', ev => { ev.preventDefault(); fsOpen(!$('fs').open); });
+function tagSearch() {
+  const q = $('tq').value.trim().toLowerCase();
+  document.querySelectorAll('#tags [data-act="flt"]').forEach(b => b.hidden = !!q && !b.dataset.v.toLowerCase().includes(q));
+}
+$('tq').addEventListener('input', tagSearch);
 function renderSet() {
   const E = ents();
   $('pgSet').innerHTML = `<button class="link" data-act="go" data-v="exp">← Back</button><h2>Edit tags</h2><p class="mute">Pick a color for each tag. The text color is chosen automatically so it stays readable.</p>` +
@@ -282,12 +300,13 @@ document.addEventListener('click', ev => {
   else if (a === 'close') $('modal').hidden = true;
   else if (a === 'save') save();
   else if (a === 'flt') { tog(sel[k]); render(); }
-  else if (a === 'tagflt') { sel[k].add(v); $('tags').closest('details').open = true; if (focus) nav('/exp'); else { render(); scrollTo(0, 0); } }   // tag on an entry: filter by it
+  else if (a === 'tagflt') {   // tag on an entry: filter by it, or clear that filter if it's already on
+    tog(sel[k]); const on = sel[k].has(v); if (on) fsOpen(true);
+    if (focus) nav('/exp'); else { render(); if (on) scrollTo(0, 0); }
+  }
   else if (a === 'clear') { KINDS.forEach(([x]) => sel[x].clear()); render(); }
   else if (a === 'rmTag') { draft[k] = draft[k].filter(n => n !== v); drawDraft(); }
   else if (a === 'rmI') { draft.imgs.splice(+v, 1); drawDraft(); }
-  else if (a === 'zoom') { $('lb').querySelector('img').src = b.src; $('lb').hidden = false; }
-  else if (a === 'unzoom') $('lb').hidden = true;
   else if (a === 'sortBy') { sortBy = v; render(); }
   else if (a === 'sortDir') { sortDir = sortDir === 'desc' ? 'asc' : 'desc'; render(); }
   else if (a === 'edit') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); }
