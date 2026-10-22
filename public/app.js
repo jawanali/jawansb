@@ -3,12 +3,12 @@
    Experiences have no "kind"; blog posts have kind "post". render() redraws the screen whenever something changes. */
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-// On claude.ai, links point at the published page; on your own website they point at your own address.
-const BASE = window.claude ? 'https://claude.ai/artifact/BR7ipGaPa6vgYHgBaPsyVT' : location.href.split('#')[0];
+// Copied links start with your site's address, e.g. https://jawansb.com
+const BASE = location.origin;
 // The three tag categories, in the order they appear everywhere: [storage name, label, placeholder]
 const KINDS = [['types', 'Type', 'Add type'], ['people', 'People', 'Add person'], ['places', 'Location', 'Add place']];
 const sel = {types: new Set(), people: new Set(), places: new Set()};
-let all = [], assets = true, page = 'exp', focus = null, sortBy = 'date', sortDir = 'desc', draft = null;
+let all = [], loaded = false, assets = true, page = 'exp', focus = null, sortBy = 'date', sortDir = 'desc', draft = null;
 const ents = () => all.filter(x => !x.kind), posts = () => all.filter(x => x.kind === 'post');
 const colors = () => (all.find(x => x.id === 'settings') || {}).colors || {};
 const tagsOf = (e, k) => k === 'types' ? (e.types || (e.type ? [e.type] : [])) : (e[k] || []);
@@ -42,7 +42,8 @@ async function load() {
   if (!sb) { $('status').textContent = 'Could not load Supabase'; return; }
   const {data, error} = await sb.from('items').select('*');   // visitors only receive public rows; you receive everything
   if (error) { flash('Could not load: ' + error.message); return; }
-  all = data.map(toDoc); render();
+  all = data.map(toDoc); loaded = true; render();
+  if (owner) backfill();
 }
 async function init() {
   if (sb) {
@@ -51,11 +52,31 @@ async function init() {
   }
   await load();
 }
+// row() turns an item back into the shape Supabase stores: id, kind and is_public get their own columns, everything else goes in "data"
+const row = ({id, kind, is_public, ...rest}) => ({id, kind: kind || 'entry', is_public: kind === 'settings' ? true : !!is_public, data: rest});
 async function put(o) {
-  const {id, kind, is_public, ...rest} = o;
-  const {error} = await sb.from('items').upsert({id, kind: kind || 'entry', is_public: kind === 'settings' ? true : !!is_public, data: rest});
+  const {error} = await sb.from('items').upsert(row(o));
   if (error) { flash('Save failed: ' + error.message); return false; }
   await load(); return true;
+}
+/* --- NUMBERS: every experience and every post gets a permanent number used in its link (/exp/1, /blog/1).
+       New items get the next number. Items saved before numbers existed get numbered once, oldest first,
+       the first time you're logged in. Numbers never change, so links you share keep working. --- */
+const nextNum = l => Math.max(0, ...l.map(x => x.num || 0)) + 1;
+let numbering = false;
+async function backfill() {
+  if (numbering) return;
+  const todo = [];
+  for (const [l, when] of [[ents(), e => e.start], [posts(), p => p.created]]) {
+    let n = nextNum(l);
+    l.filter(x => !x.num).sort((a, b) => when(a).localeCompare(when(b))).forEach(x => todo.push({...x, num: n++}));
+  }
+  if (!todo.length) return;
+  numbering = true;
+  const {error} = await sb.from('items').upsert(todo.map(row));
+  numbering = false;
+  if (error) { flash('Numbering failed: ' + error.message); return; }
+  flash('Gave ' + todo.length + ' items their link numbers'); await load();
 }
 async function del(id) {
   const old = all.find(x => x.id === id);
@@ -93,15 +114,15 @@ const dirBtn = () => {
 
 /* --- DRAWING THE SCREEN --- */
 const gal = e => (e.images || []).length ? `<div class="gal">${e.images.map(i => `<img class="th" data-act="zoom" loading="lazy" alt="" src="${esc(imgSrc(i))}">`).join('')}</div>` : '';
-const acts = (p, id, pub) => (owner ? `<button class="link" data-act="edit" data-v="${id}" style="margin-right:12px">Edit</button><button class="link" data-act="del" data-v="${id}" style="margin-right:12px">Delete</button>` : '') + (owner && !pub ? '<span class="pill" style="margin-right:12px">Private</span>' : '') + `<button class="link" data-act="link" data-v="${p}-${id}">Copy link</button>`;
+const acts = (p, x) => (owner ? `<button class="link" data-act="edit" data-v="${x.id}" style="margin-right:12px">Edit</button><button class="link" data-act="del" data-v="${x.id}" style="margin-right:12px">Delete</button>` : '') + (owner && !x.is_public ? '<span class="pill" style="margin-right:12px">Private</span>' : '') + `<button class="link" data-act="link" data-v="/${p}${x.num ? '/' + x.num : ''}">Copy link</button>`;
 const card = e => {
   const s = new Date(e.start), en = new Date(e.end), tm = x => x.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
   return `<div class="card entry" id="e-${e.id}"><div class="top"><span>${s.toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'})} · ${tm(s)}–${tm(en)}</span><span>${dur(e.minutes)} · +${e.minutes} EXP</span></div>
   <h4>${esc(e.title)}</h4>${stars(e.rating)}${e.desc ? `<p>${esc(e.desc)}</p>` : ''}${gal(e)}
-  <div style="margin-top:6px">${KINDS.map(([k]) => tagsOf(e, k).map(n => chip(k, n)).join('')).join('')}</div>${acts('e', e.id, e.is_public)}</div>`;
+  <div style="margin-top:6px">${KINDS.map(([k]) => tagsOf(e, k).map(n => chip(k, n)).join('')).join('')}</div>${acts('exp', e)}</div>`;
 };
 const bcard = p => `<div class="card entry" id="b-${p.id}"><div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>
-  <h4>${esc(p.title)}</h4>${p.body ? `<p>${esc(p.body)}</p>` : ''}${gal(p)}${acts('b', p.id, p.is_public)}</div>`;
+  <h4>${esc(p.title)}</h4>${p.body ? `<p>${esc(p.body)}</p>` : ''}${gal(p)}${acts('blog', p)}</div>`;
 
 function render() {
   const E = ents(), filtered = KINDS.some(([k]) => sel[k].size);
@@ -126,11 +147,19 @@ function render() {
   };
   const opt = (v, l) => `<button class="tag ${sortBy === v ? 'on' : ''}" data-act="sortBy" data-v="${v}">${l}</button>`;
   $('tags').innerHTML = KINDS.map(rows).join('') + `<h3>SORT BY</h3><div class="tl">${opt('date', 'Date')}${opt('exp', 'EXP')}${opt('rating', 'Rating')}<span style="width:14px"></span>${dirBtn()}</div>`;
-  // journal + blog (a "focus" id means someone opened one item by its link)
-  const one = (p, list) => focus && page === p ? list.filter(x => x.id === focus) : list, back = (w) => focus ? `<p class="mute">Viewing one ${w} · <button class="link" data-act="unfocus">Show all</button></p>` : '';
-  $('journal').innerHTML = (page === 'exp' ? back('experience') : '') + (one('exp', f).map(card).join('') || `<p class="mute">Nothing here yet.${owner ? ' Tap “+ Log” to record an experience.' : ''}</p>`);
+  // journal + blog ("focus" is set when someone opened one item by its link: its number, or its id from an old #e-/#b- link)
+  const one = (p, list) => {
+    if (!focus || page !== p) return list;
+    const hit = list.filter(x => String(x.num) === focus || x.id === focus);
+    // an old-style link found its item: swap the address bar to the new /exp/3 style
+    if (hit[0] && hit[0].num && focus !== String(hit[0].num)) { focus = String(hit[0].num); history.replaceState(null, '', `/${p}/${focus}`); }
+    return hit;
+  };
+  const back = w => focus ? `<p class="mute">Viewing one ${w} · <button class="link" data-act="unfocus">Show all</button></p>` : '';
+  const none = (w, empty) => !focus ? empty : loaded ? `<p class="mute">Couldn't find that ${w}. It may be private or deleted.</p>` : '<p class="mute">Loading…</p>';
+  $('journal').innerHTML = (page === 'exp' ? back('experience') : '') + (one('exp', f).map(card).join('') || none('experience', `<p class="mute">Nothing here yet.${owner ? ' Tap “+ Log” to record an experience.' : ''}</p>`));
   const P = posts().sort((a, b) => b.created.localeCompare(a.created));
-  $('blog').innerHTML = (page === 'blog' ? back('post') : '') + (one('blog', P).map(bcard).join('') || `<p class="mute">No posts yet.${owner ? ' Tap “+ Blog” to write one.' : ''}</p>`);
+  $('blog').innerHTML = (page === 'blog' ? back('post') : '') + (one('blog', P).map(bcard).join('') || none('post', `<p class="mute">No posts yet.${owner ? ' Tap “+ Blog” to write one.' : ''}</p>`));
   if (page === 'set') renderSet();
 }
 function renderSet() {
@@ -204,22 +233,27 @@ async function save() {
   try { for (const im of draft.imgs) images.push(im.ref || await upImg(im.blob)); }
   catch (x) { return fail('Photo upload failed: ' + x.message); }
   const id = draft.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), d = $('d').value.trim(), is_public = $('pub').checked;
-  const ok = await put(b ? {kind: 'post', id, is_public, title: t, body: d, images, created: draft.old ? draft.old.created : new Date().toISOString()}
-    : {id, is_public, title: t, desc: d, start: s.toISOString(), end: e.toISOString(), minutes: m, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images});
+  const num = (draft.old && draft.old.num) || nextNum(b ? posts() : ents());
+  const ok = await put(b ? {kind: 'post', id, num, is_public, title: t, body: d, images, created: draft.old ? draft.old.created : new Date().toISOString()}
+    : {id, num, is_public, title: t, desc: d, start: s.toISOString(), end: e.toISOString(), minutes: m, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images});
   if (!ok) return fail('Could not save. Are you still logged in?');
   const gone = draft.old ? (draft.old.images || []).filter(i => !images.includes(i)) : [];
   if (gone.length) await sb.storage.from('photos').remove(gone);
   $('modal').hidden = true;
 }
 
-/* --- LINKS: each item can be opened by adding #e-ID (experience) or #b-ID (post) to the page address --- */
+/* --- ADDRESSES: /exp and /blog are the two pages, /exp/3 or /blog/3 opens item number 3, /settings is tag colors.
+       Old links like /#e-ID or /#b-ID still work. route() reads the address bar; nav() changes it without reloading. --- */
 function route() {
-  const h = location.hash.slice(1); focus = null;
-  if (h.startsWith('e-')) { page = 'exp'; focus = h.slice(2); } else if (h.startsWith('b-')) { page = 'blog'; focus = h.slice(2); }
+  const [p, n] = location.pathname.split('/').filter(Boolean), h = location.hash.slice(1);
+  page = p === 'blog' ? 'blog' : p === 'settings' ? 'set' : 'exp'; focus = n || null;
+  if (/^[eb]-/.test(h)) { page = h[0] === 'b' ? 'blog' : 'exp'; focus = h.slice(2); }
+  else if (!p) history.replaceState(null, '', '/exp');
   render();
 }
+const nav = path => { history.pushState(null, '', path); route(); scrollTo(0, 0); };
 async function copyLink(v) {
-  const u = BASE + '#' + v;
+  const u = BASE + v;
   try { await navigator.clipboard.writeText(u); $('toast').textContent = 'Link copied: ' + u; } catch (e) { $('toast').textContent = u; }
   $('toast').hidden = false; setTimeout(() => $('toast').hidden = true, 6000);
 }
@@ -230,8 +264,8 @@ document.addEventListener('click', ev => {
   if (pk) { const r = pk.getBoundingClientRect(); draft.rating = +pk.dataset.i - 1 + (ev.clientX - r.left < r.width / 2 ? 0.5 : 1); drawDraft(); return; }
   const b = ev.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act, v = b.dataset.v, k = b.dataset.k, tog = (set) => set.has(v) ? set.delete(v) : set.add(v);
-  if (a === 'go') { page = v; focus = null; render(); }
-  else if (a === 'settings') { page = 'set'; focus = null; render(); }
+  if (a === 'go') { if (ev.metaKey || ev.ctrlKey) return; ev.preventDefault(); nav('/' + v); }   // Cmd/Ctrl-click still opens a new tab
+  else if (a === 'settings') nav('/settings');
   else if (a === 'open') openModal(page === 'blog' ? 'b' : 'e');
   else if (a === 'close') $('modal').hidden = true;
   else if (a === 'save') save();
@@ -245,8 +279,8 @@ document.addEventListener('click', ev => {
   else if (a === 'sortDir') { sortDir = sortDir === 'desc' ? 'asc' : 'desc'; render(); }
   else if (a === 'edit') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); }
   else if (a === 'link') copyLink(v);
-  else if (a === 'unfocus') { focus = null; render(); }
-  else if (a === 'lock') { if (owner) { sb.auth.signOut(); page = 'exp'; focus = null; } else { $('login').hidden = false; $('lemail').focus(); } }
+  else if (a === 'unfocus') nav('/' + page);
+  else if (a === 'lock') { if (owner) { sb.auth.signOut(); nav('/exp'); } else { $('login').hidden = false; $('lemail').focus(); } }
   else if (a === 'dologin') doLogin();
   else if (a === 'closelogin') $('login').hidden = true;
   else if (a === 'resetc') setColor(k, v, null);
@@ -260,6 +294,7 @@ $('s').addEventListener('input', updExp); $('e').addEventListener('input', updEx
 // color pickers in Settings: preview live while dragging, save when the picker closes
 $('pgSet').addEventListener('input', ev => { if (ev.target.type === 'color') { const c = ev.target.previousElementSibling; c.style.background = ev.target.value; c.style.color = ink(ev.target.value); } });
 $('pgSet').addEventListener('change', ev => { if (ev.target.type === 'color') setColor(ev.target.dataset.k, ev.target.dataset.v, ev.target.value); });
+window.addEventListener('popstate', route);     // browser Back/Forward buttons
 window.addEventListener('hashchange', route);
 $('lpass').addEventListener('keydown', ev => { if (ev.key === 'Enter') doLogin(); });
 route(); init();

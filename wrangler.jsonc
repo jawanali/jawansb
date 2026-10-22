@@ -1,5 +1,6 @@
 {
   "name": "jawansb",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "./public" }
+  // "single-page-application" = any address like /exp, /blog or /exp/3 gets index.html, and app.js decides what to show
+  "assets": { "directory": "./public", "not_found_handling": "single-page-application" }
 }
