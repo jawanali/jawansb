@@ -33,7 +33,8 @@
 </div>
   </header>
 
-  <main id="pgExp">
+  <main id="pgExp" class="cols">
+   <aside class="side">
     <section class="stats" id="statsBox">
       <div class="card">
         <b id="totExp">0</b>
@@ -50,8 +51,11 @@
     </section>
     <div id="fsum" class="mute" style="margin-top:10px"></div>
     <details class="fs"><summary>Filter &amp; sort<span id="fcount"></span></summary><div id="tags"></div></details>
+   </aside>
+   <div>
     <h2>Journal</h2>
     <div id="journal"></div>
+   </div>
   </main>
   <main id="pgBlog" hidden><h2>Blog</h2><div id="blog"></div></main>
   <main id="pgSet" hidden></main>
@@ -67,6 +71,7 @@
     <div class="xe"><label>Rating <span id="rv" style="text-transform:none;letter-spacing:0"></span></label><div id="pick" class="pk"></div></div>
     <label id="dl">Description</label><textarea id="d"></textarea>
     <label>Photos</label><div id="ph"></div><input id="fi" type="file" accept="image/*" multiple>
+    <label>Photos go under</label><select id="imgAt"></select>
     <label class="chk"><input id="pub" type="checkbox"> Public (anyone visiting your site can see this)</label>
     <div id="err"></div>
     <button class="go" id="go" data-act="save">LOG</button>

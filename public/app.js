@@ -29,7 +29,7 @@ function ink(bg) {
 const auto = n => { let x = 0; for (const c of n) x = (x * 31 + c.charCodeAt(0)) >>> 0; return hsl(x % 360, 62, 52); };
 const tcol = (k, n) => colors()[k + ':' + n] || auto(k + n);
 const ts = (k, n) => { const b = tcol(k, n); return `background:${b};color:${ink(b)}`; };
-const chip = (k, n) => `<span class="chip" style="${ts(k, n)}">${esc(n)}</span>`;
+const chip = (k, n) => `<span class="chip" style="${ts(k, n)}" data-act="tagflt" data-k="${k}" data-v="${esc(n)}" title="Show only “${esc(n)}”">${esc(n)}</span>`;
 
 /* --- SUPABASE: your online database + login. The URL and publishable key are safe to be public;
        the rules you created in Supabase are what keep private items private. --- */
@@ -115,14 +115,25 @@ const dirBtn = () => {
 /* --- DRAWING THE SCREEN --- */
 const gal = e => (e.images || []).length ? `<div class="gal">${e.images.map(i => `<img class="th" data-act="zoom" loading="lazy" alt="" src="${esc(imgSrc(i))}">`).join('')}</div>` : '';
 const acts = (p, x) => (owner ? `<button class="link" data-act="edit" data-v="${x.id}" style="margin-right:12px">Edit</button><button class="link" data-act="del" data-v="${x.id}" style="margin-right:12px">Delete</button>` : '') + (owner && !x.is_public ? '<span class="pill" style="margin-right:12px">Private</span>' : '') + `<button class="link" data-act="link" data-v="/${p}${x.num ? '/' + x.num : ''}">Copy link</button>`;
+// Clicking a title opens that item on its own page (/exp/3)
+const ttl = (p, x) => `<h4>${x.num ? `<a href="/${p}/${x.num}" data-act="go" data-v="${p}/${x.num}">${esc(x.title)}</a>` : esc(x.title)}</h4>`;
+// Where photos can go, for each kind of item. The value is saved on the item as "imgAt"; "desc" is the default.
+const SPOTS = {e: [['title', 'Title'], ['type', 'Type tags'], ['rating', 'Rating'], ['desc', 'Description'], ['tags', 'People & location']], b: [['title', 'Title'], ['desc', 'Body']]};
 const card = e => {
   const s = new Date(e.start), en = new Date(e.end), tm = x => x.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+  const at = w => (e.imgAt || 'desc') === w ? gal(e) : '';
+  const grp = (k, w) => tagsOf(e, k).length ? `<span class="grp"><em>${w}</em>${tagsOf(e, k).map(n => chip(k, n)).join('')}</span>` : '';
+  const types = tagsOf(e, 'types').length ? `<div class="types">${tagsOf(e, 'types').map(n => chip('types', n)).join('')}</div>` : '';
+  const ptags = grp('people', 'with') + grp('places', 'at');
   return `<div class="card entry" id="e-${e.id}"><div class="top"><span>${s.toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'})} · ${tm(s)}–${tm(en)}</span><span>${dur(e.minutes)} · +${e.minutes} EXP</span></div>
-  <h4>${esc(e.title)}</h4>${stars(e.rating)}${e.desc ? `<p>${esc(e.desc)}</p>` : ''}${gal(e)}
-  <div style="margin-top:6px">${KINDS.map(([k]) => tagsOf(e, k).map(n => chip(k, n)).join('')).join('')}</div>${acts('exp', e)}</div>`;
+  ${ttl('exp', e)}${at('title')}${types}${at('type')}${stars(e.rating)}${at('rating')}${e.desc ? `<p>${esc(e.desc)}</p>` : ''}${at('desc')}
+  ${ptags ? `<div class="ptags">${ptags}</div>` : ''}${at('tags')}${acts('exp', e)}</div>`;
 };
-const bcard = p => `<div class="card entry" id="b-${p.id}"><div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>
-  <h4>${esc(p.title)}</h4>${p.body ? `<p>${esc(p.body)}</p>` : ''}${gal(p)}${acts('blog', p)}</div>`;
+const bcard = p => {
+  const at = w => (p.imgAt || 'desc') === w ? gal(p) : '';
+  return `<div class="card entry" id="b-${p.id}"><div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>
+  ${ttl('blog', p)}${at('title')}${p.body ? `<p>${esc(p.body)}</p>` : ''}${at('desc')}${acts('blog', p)}</div>`;
+};
 
 function render() {
   const E = ents(), filtered = KINDS.some(([k]) => sel[k].size);
@@ -200,6 +211,7 @@ function openModal(kind, old) {
   $('dl').textContent = kind === 'b' ? 'Body' : 'Description';
   KINDS.forEach(([k]) => $('l-' + k).innerHTML = [...new Set(ents().flatMap(e => tagsOf(e, k)))].map(n => `<option value="${esc(n)}">`).join(''));
   $('pub').checked = old ? !!old.is_public : false;
+  $('imgAt').innerHTML = SPOTS[kind].map(([v, l]) => `<option value="${v}">${l}</option>`).join(''); $('imgAt').value = (old && old.imgAt) || 'desc';
   $('go').disabled = false; $('go').textContent = goLabel(); $('err').textContent = '';
   drawDraft(); updExp(); $('modal').hidden = false; $('s').focus();
 }
@@ -233,9 +245,9 @@ async function save() {
   try { for (const im of draft.imgs) images.push(im.ref || await upImg(im.blob)); }
   catch (x) { return fail('Photo upload failed: ' + x.message); }
   const id = draft.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), d = $('d').value.trim(), is_public = $('pub').checked;
-  const num = (draft.old && draft.old.num) || nextNum(b ? posts() : ents());
-  const ok = await put(b ? {kind: 'post', id, num, is_public, title: t, body: d, images, created: draft.old ? draft.old.created : new Date().toISOString()}
-    : {id, num, is_public, title: t, desc: d, start: s.toISOString(), end: e.toISOString(), minutes: m, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images});
+  const num = (draft.old && draft.old.num) || nextNum(b ? posts() : ents()), imgAt = $('imgAt').value;
+  const ok = await put(b ? {kind: 'post', id, num, is_public, title: t, body: d, images, imgAt, created: draft.old ? draft.old.created : new Date().toISOString()}
+    : {id, num, is_public, title: t, desc: d, start: s.toISOString(), end: e.toISOString(), minutes: m, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgAt});
   if (!ok) return fail('Could not save. Are you still logged in?');
   const gone = draft.old ? (draft.old.images || []).filter(i => !images.includes(i)) : [];
   if (gone.length) await sb.storage.from('photos').remove(gone);
@@ -270,6 +282,7 @@ document.addEventListener('click', ev => {
   else if (a === 'close') $('modal').hidden = true;
   else if (a === 'save') save();
   else if (a === 'flt') { tog(sel[k]); render(); }
+  else if (a === 'tagflt') { sel[k].add(v); $('tags').closest('details').open = true; if (focus) nav('/exp'); else { render(); scrollTo(0, 0); } }   // tag on an entry: filter by it
   else if (a === 'clear') { KINDS.forEach(([x]) => sel[x].clear()); render(); }
   else if (a === 'rmTag') { draft[k] = draft[k].filter(n => n !== v); drawDraft(); }
   else if (a === 'rmI') { draft.imgs.splice(+v, 1); drawDraft(); }
