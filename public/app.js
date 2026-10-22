@@ -9,7 +9,8 @@ const BASE = location.origin;
 const KINDS = [['types', 'Type'], ['people', 'People'], ['places', 'Location']];
 const sel = {types: new Set(), people: new Set(), places: new Set()};
 let all = [], loaded = false, assets = true, page = 'exp', focus = null, sortBy = 'date', sortDir = 'desc', draft = null;
-const ents = () => all.filter(x => !x.kind), posts = () => all.filter(x => x.kind === 'post');
+// Drafts are saved like normal items but marked draft: true, so they stay out of the journal, blog, stats and numbering
+const ents = () => all.filter(x => !x.kind && !x.draft), posts = () => all.filter(x => x.kind === 'post' && !x.draft), drafts = () => all.filter(x => x.draft);
 const colors = () => (all.find(x => x.id === 'settings') || {}).colors || {};
 const tagsOf = (e, k) => k === 'types' ? (e.types || (e.type ? [e.type] : [])) : (e[k] || []);
 
@@ -42,7 +43,7 @@ async function load() {
   if (!sb) { $('status').textContent = 'Could not load Supabase'; return; }
   const {data, error} = await sb.from('items').select('*');   // visitors only receive public rows; you receive everything
   if (error) { flash('Could not load: ' + error.message); return; }
-  all = data.map(toDoc); loaded = true; render();
+  all = data.map(toDoc); loaded = true; render(); if (!$('modal').hidden) drawDrafts();
   if (owner) backfill();
 }
 async function init() {
@@ -113,7 +114,9 @@ const dirBtn = () => {
 };
 
 /* --- DRAWING THE SCREEN --- */
-const gal = e => (e.images || []).length ? `<div class="gal">${e.images.map(i => `<img class="th" loading="lazy" alt="" src="${esc(imgSrc(i))}">`).join('')}</div>` : '';
+// A photo with a resize handle on its bottom-right corner. h = the height saved for it (none = the default size).
+const rz = (src, h, attrs = '', inner = '') => `<span class="rz"${attrs}><img class="th" loading="lazy" alt="" src="${esc(src)}"${h ? ` style="height:${h}px"` : ''}><i class="rzh" title="Drag to resize"></i>${inner}</span>`;
+const gal = e => (e.images || []).length ? `<div class="gal">${e.images.map((i, n) => rz(imgSrc(i), (e.imgH || [])[n])).join('')}</div>` : '';
 // Edit / Delete / Copy link: small icons in the bottom-right corner of each card (hover for the name)
 const ICONS = {
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
@@ -222,15 +225,54 @@ async function setColor(k, n, v) { const c = {...colors()}; if (v) c[k + ':' + n
 
 /* --- THE LOG / BLOG FORM (one form, two modes: "e" = experience, "b" = blog post) --- */
 const loc = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
-const goLabel = () => draft.editId ? 'SAVE CHANGES' : draft.kind === 'b' ? 'POST' : 'LOG';
+const wasDraft = () => !!(draft.old && draft.old.draft);
+const goLabel = () => draft.editId && !wasDraft() ? 'SAVE CHANGES' : draft.kind === 'b' ? 'POST' : 'LOG';
+const btnReset = () => { $('go').disabled = $('sd').disabled = false; $('go').textContent = goLabel(); $('sd').textContent = 'SAVE DRAFT'; };
 // Type is its own block; People and Location share one. Press Enter after typing a tag.
 // While you type, tags you've used before that match show up underneath (#s-types etc.).
 const tfBlock = ([k, l]) => `<div class="tin"><label>${l}</label><div id="c-${k}"></div><input id="i-${k}" data-k="${k}" autocomplete="off"><div class="sug" id="s-${k}" hidden></div></div>`;
 $('tfType').innerHTML = tfBlock(KINDS[0]); $('tf').innerHTML = `<div class="two">${tfBlock(KINDS[1])}${tfBlock(KINDS[2])}</div>`;
 function drawDraft() {
   KINDS.forEach(([k]) => $('c-' + k).innerHTML = draft[k].map(n => `<span class="chip" style="${ts(k, n)}">${esc(n)}<button class="x" data-act="rmTag" data-k="${k}" data-v="${esc(n)}">✕</button></span>`).join(''));
-  $('pick').innerHTML = stars(draft.rating); $('rv').textContent = draft.rating ? draft.rating + ' / 5' : '';
-  $('ph').innerHTML = draft.imgs.map((im, i) => `<span class="pv"><img class="th" src="${im.url}" alt=""><button data-act="rmI" data-v="${i}">✕</button></span>`).join('');
+  drawStars();
+  $('ph').innerHTML = draft.imgs.map((im, i) => rz(im.url, im.h, ` data-i="${i}"`, `<button data-act="rmI" data-v="${i}">✕</button>`).replace('class="rz"', 'class="rz pv"')).join('');
+}
+function drawStars() { $('pick').innerHTML = stars(draft.rating); $('rv').textContent = draft.rating ? draft.rating + ' / 5' : ''; }
+/* --- STAR RATING: press and slide across the stars (or just click). It snaps to half stars. --- */
+let rating = false;
+const rateAt = ev => { const r = $('pick').firstElementChild.getBoundingClientRect(); draft.rating = Math.min(5, Math.max(0.5, Math.ceil((ev.clientX - r.left) / r.width * 10) / 2)); drawStars(); };
+$('pick').addEventListener('pointerdown', ev => { if (!ev.target.closest('.st')) return; ev.preventDefault(); rating = true; rateAt(ev); $('pick').setPointerCapture(ev.pointerId); });
+$('pick').addEventListener('pointermove', ev => { if (rating) rateAt(ev); });
+$('pick').addEventListener('pointerup', () => rating = false); $('pick').addEventListener('pointercancel', () => rating = false);
+/* --- PHOTO RESIZING: drag a photo's bottom-right corner. In the form this sets the photo's size on the post;
+       on a post it just zooms that photo for whoever is looking (not saved). The post box grows or shrinks with it. --- */
+let rzDrag = null;
+document.addEventListener('pointerdown', ev => {
+  const hdl = ev.target.closest('.rzh'); if (!hdl) return;
+  ev.preventDefault();
+  const img = hdl.parentElement.querySelector('img'), r = img.getBoundingClientRect();
+  rzDrag = {img, x: ev.clientX, y: ev.clientY, w: r.width, h: r.height, maxW: hdl.closest('.gal, #ph').clientWidth};   // can't grow wider than its row
+  hdl.setPointerCapture(ev.pointerId);
+});
+document.addEventListener('pointermove', ev => {
+  if (!rzDrag) return;
+  const {img, x, y, w, h, maxW} = rzDrag;
+  const s = 1 + ((ev.clientX - x) * w + (ev.clientY - y) * h) / (w * w + h * h);   // how far you've dragged along the corner's diagonal
+  img.style.height = Math.round(Math.max(60, Math.min(h * s, h * maxW / w, 1200))) + 'px';
+});
+const rzEnd = () => {
+  if (!rzDrag) return;
+  const pv = rzDrag.img.closest('.pv'); if (pv) draft.imgs[+pv.dataset.i].h = parseInt(rzDrag.img.style.height);   // in the form: remember it
+  rzDrag = null;
+};
+document.addEventListener('pointerup', rzEnd); document.addEventListener('pointercancel', rzEnd);
+/* --- DRAFTS: unfinished posts, saved privately. They're listed at the top of the form; click one to keep writing it. --- */
+function drawDrafts() {
+  if (!draft) return;
+  const l = drafts().filter(x => (x.kind === 'post') === (draft.kind === 'b')).sort((a, b) => (b.saved || '').localeCompare(a.saved || ''));
+  $('drf').hidden = !l.length || (draft.old && !wasDraft());   // not shown while editing an already-published post
+  $('drfN').textContent = l.length ? `(${l.length})` : '';
+  $('drafts').innerHTML = l.map(x => `<div class="drow${x.id === draft.editId ? ' on' : ''}"><button class="link" data-act="loaddraft" data-v="${x.id}">${esc(x.title || 'Untitled')}</button><span class="mute">${x.saved ? new Date(x.saved).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'}) : ''}</span>${ib('del', x.id, 'Delete draft')}</div>`).join('');
 }
 function suggest(k) {
   const q = $('i-' + k).value.trim().toLowerCase(), box = $('s-' + k);
@@ -268,16 +310,17 @@ function addTag(k) {
 function openModal(kind, old) {
   draft = {kind, rating: 0, types: [], people: [], places: [], imgs: []};
   orderOf(old || {}).map(k => $('secs').querySelector(`[data-sec="${k}"]`)).filter(Boolean).forEach(x => $('secs').appendChild(x));   // lay the blocks out in this post's order
-  if (old) draft = {...draft, rating: old.rating || 0, imgs: (old.images || []).map(r => ({ref: r, url: imgSrc(r)})), editId: old.id, old, ...Object.fromEntries(KINDS.map(([k]) => [k, [...tagsOf(old, k)]]))};
+  if (old) draft = {...draft, rating: old.rating || 0, imgs: (old.images || []).map((r, i) => ({ref: r, url: imgSrc(r), h: (old.imgH || [])[i] || null})), editId: old.id, old, ...Object.fromEntries(KINDS.map(([k]) => [k, [...tagsOf(old, k)]]))};
   const now = new Date();
   $('s').value = loc(old && old.start ? new Date(old.start) : new Date(now - 36e5)); $('e').value = loc(old && old.end ? new Date(old.end) : now);
   $('t').value = old ? old.title : ''; $('d').value = old ? (old.desc || old.body || '') : ''; $('fi').value = '';
   document.querySelectorAll('.xe').forEach(x => x.hidden = kind === 'b');
-  $('mh').textContent = (old ? 'Edit ' : 'New ') + (kind === 'b' ? 'post' : 'experience');
+  $('mh').textContent = (old && !wasDraft() ? 'Edit ' : 'New ') + (kind === 'b' ? 'post' : 'experience') + (wasDraft() ? ' · draft' : '');
   $('dl').textContent = kind === 'b' ? 'Body' : 'Description';
-  $('pub').checked = old ? !!old.is_public : false;
-  $('go').disabled = false; $('go').textContent = goLabel(); $('err').textContent = '';
-  drawDraft(); updExp(); $('modal').hidden = false; $('t').focus();
+  $('pub').checked = old ? !!(old.draft ? old.wantPublic : old.is_public) : false;
+  $('sd').hidden = !!old && !wasDraft();   // no "Save draft" when editing a post that's already published
+  btnReset(); $('err').textContent = '';
+  drawDraft(); drawDrafts(); updExp(); $('modal').hidden = false; $('t').focus();
 }
 // Photos are shrunk in your browser before saving, so uploads stay small and fast.
 const asData = b => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(b); });
@@ -298,23 +341,28 @@ $('fi').addEventListener('change', async ev => {
   }
   ev.target.value = ''; drawDraft();
 });
-async function save() {
+async function save(asDraft) {
   KINDS.forEach(([k]) => addTag(k));
   const b = draft.kind === 'b', t = $('t').value.trim(), s = new Date($('s').value), e = new Date($('e').value), m = Math.round((e - s) / 6e4);
-  const err = !t ? 'Give it a title.' : !b && !(m > 0) ? 'End time must be after the start time.' : !b && !draft.rating ? 'Pick a star rating.' : '';
+  const err = asDraft ? '' : !t ? 'Give it a title.' : !b && !(m > 0) ? 'End time must be after the start time.' : !b && !draft.rating ? 'Pick a star rating.' : '';
   if (err) { $('err').textContent = err; return; }
-  $('go').disabled = true; $('go').textContent = 'Saving…';
-  const fail = msg => { $('err').textContent = msg; $('go').disabled = false; $('go').textContent = goLabel(); };
+  $('go').disabled = $('sd').disabled = true; (asDraft ? $('sd') : $('go')).textContent = 'Saving…'; $('err').textContent = '';
+  const fail = msg => { $('err').textContent = msg; btnReset(); };
   const images = [];
-  try { for (const im of draft.imgs) images.push(im.ref || await upImg(im.blob)); }
+  try { for (const im of draft.imgs) { im.ref = im.ref || await upImg(im.blob); images.push(im.ref); } }   // remember uploads, so saving again doesn't re-upload
   catch (x) { return fail('Photo upload failed: ' + x.message); }
-  const id = draft.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), d = $('d').value.trim(), is_public = $('pub').checked;
-  const num = (draft.old && draft.old.num) || nextNum(b ? posts() : ents()), order = [...$('secs').children].map(x => x.dataset.sec);
-  const ok = await put(b ? {kind: 'post', id, num, is_public, title: t, body: d, images, order, created: draft.old ? draft.old.created : new Date().toISOString()}
-    : {id, num, is_public, title: t, desc: d, start: s.toISOString(), end: e.toISOString(), minutes: m, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, order});
+  const id = draft.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), d = $('d').value.trim(), pub = $('pub').checked;
+  const iso = x => isNaN(x) ? null : x.toISOString(), order = [...$('secs').children].map(x => x.dataset.sec), imgH = draft.imgs.map(im => im.h || null);
+  // a draft is always private (it remembers your Public choice for later) and has no number; publishing gives it the next number
+  const extra = asDraft ? {draft: true, is_public: false, wantPublic: pub, saved: new Date().toISOString()}
+    : {is_public: pub, num: (draft.old && draft.old.num) || nextNum(b ? posts() : ents())};
+  const o = b ? {kind: 'post', id, ...extra, title: t, body: d, images, imgH, order, created: draft.old && !wasDraft() ? draft.old.created : new Date().toISOString()}
+    : {id, ...extra, title: t, desc: d, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order};
+  const ok = await put(o);
   if (!ok) return fail('Could not save. Are you still logged in?');
   const gone = draft.old ? (draft.old.images || []).filter(i => !images.includes(i)) : [];
   if (gone.length) await sb.storage.from('photos').remove(gone);
+  if (asDraft) { draft.editId = id; draft.old = o; $('mh').textContent = 'New ' + (b ? 'post' : 'experience') + ' · draft'; btnReset(); drawDrafts(); flash('Draft saved'); return; }   // keep writing
   $('modal').hidden = true;
 }
 
@@ -336,8 +384,6 @@ async function copyLink(v) {
 
 /* --- CLICKS: one listener handles every button, based on its data-act label --- */
 document.addEventListener('click', ev => {
-  const pk = ev.target.closest('.pk .st');
-  if (pk) { const r = pk.getBoundingClientRect(); draft.rating = +pk.dataset.i - 1 + (ev.clientX - r.left < r.width / 2 ? 0.5 : 1); drawDraft(); return; }
   const b = ev.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act, v = b.dataset.v, k = b.dataset.k, tog = (set) => set.has(v) ? set.delete(v) : set.add(v);
   if (a === 'go') { if (ev.metaKey || ev.ctrlKey) return; ev.preventDefault(); nav('/' + v); }   // Cmd/Ctrl-click still opens a new tab
@@ -345,6 +391,8 @@ document.addEventListener('click', ev => {
   else if (a === 'open') openModal(page === 'blog' ? 'b' : 'e');
   else if (a === 'close') $('modal').hidden = true;
   else if (a === 'save') save();
+  else if (a === 'savedraft') save(true);
+  else if (a === 'loaddraft') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); $('drf').open = true; }
   else if (a === 'flt') { tog(sel[k]); render(); }
   else if (a === 'tagflt') {   // tag on an entry: filter by it, or clear that filter if it's already on
     tog(sel[k]); const on = sel[k].has(v); if (on) fsOpen(true);
@@ -363,7 +411,7 @@ document.addEventListener('click', ev => {
   else if (a === 'closelogin') $('login').hidden = true;
   else if (a === 'resetc') setColor(k, v, null);
   else if (a === 'del') {
-    if (b.dataset.arm) del(v);
+    if (b.dataset.arm) del(v).then(() => { if (draft && draft.editId === v && !$('modal').hidden) openModal(draft.kind); });   // deleted the draft that's open: start fresh
     else { b.dataset.arm = 1; b.classList.add('arm'); b.title = 'Tap again to delete'; flash('Tap the trash icon again to delete');
       setTimeout(() => { delete b.dataset.arm; b.classList.remove('arm'); b.title = 'Delete'; }, 3000); }
   }
