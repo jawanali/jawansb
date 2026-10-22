@@ -11,6 +11,7 @@
     --on:#000;
     --acc2:#241a12;
     --star:#2DD881;
+    --panel:#3A435E;     /* solid background for pop-up windows (--card is see-through) */
  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);
  padding-bottom:env(safe-area-inset-bottom,0px)
 }
@@ -24,7 +25,8 @@
     --acc:#111;
     --on:#fff;
     --acc2:#f2f2f2;
-    --star:#e69500}
+    --star:#e69500;
+    --panel:#fff}
 
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 
@@ -202,7 +204,8 @@ h3{
 }
 /* filter tags: compact one-line buttons; each group scrolls once it holds more than ~4 rows */
 .ftl{
-  gap:4px;max-height:112px;overflow-y:auto;scrollbar-width:thin
+  gap:4px;max-height:112px;overflow-y:auto;scrollbar-width:thin;
+  padding:3px                          /* room for the selected-tag outline, which the scroll box would otherwise cut off */
 }
 /* ".tag.ftag" (not just ".ftag") so these beat the general .tag rule further down */
 .tag.ftag{
@@ -275,7 +278,7 @@ h3{
 }
 
 .entry h4{
-  margin:6px 0 2px;
+  margin:0 0 4px;
   font-size:18px
 }
 
@@ -426,7 +429,7 @@ h3{
 }
 
 .modal{
-  background:var(--card);
+  background:var(--panel);
   color:var(--ink);
   border:1px solid var(--line);
   width:100%;
@@ -542,3 +545,54 @@ textarea{
   z-index:10
 }
 
+
+
+/* ===== CARD BUTTONS: Edit / Delete / Copy link as icons, bottom-right ===== */
+.acts{
+  display:flex;justify-content:flex-end;align-items:center;gap:2px;margin-top:6px
+}
+.acts .pill{
+  margin-right:6px
+}
+.acts .ib:hover{
+  color:var(--ink)
+}
+.acts .ib.arm{
+  color:#d92d20                        /* trash turns red: tap again to delete */
+}
+
+/* ===== TAG SUGGESTIONS under the Type / People / Location boxes while typing ===== */
+.tin{
+  position:relative
+}
+.sug{
+  position:absolute;left:0;right:0;top:100%;z-index:3;
+  background:var(--panel);border:1px solid var(--line);box-shadow:0 6px 16px rgba(0,0,0,.3)
+}
+.sg{
+  display:block;width:100%;text-align:left;background:none;border:0;
+  color:var(--ink);font:inherit;font-size:14px;padding:6px 11px;cursor:pointer
+}
+.sg:hover,.sg.hi{
+  background:var(--line)
+}
+
+/* ===== LIVE PREVIEW in the form: drag the photos to a new spot ===== */
+.lay{
+  border:1px dashed var(--line);padding:8px;background:var(--bg)
+}
+.lay .card{
+  margin:0
+}
+.lay .th{
+  height:80px
+}
+.lay .gal{
+  cursor:grab;touch-action:none;outline:1px dashed var(--acc);outline-offset:3px
+}
+.lay.dragging .gal{
+  cursor:grabbing;opacity:.7
+}
+.slot{
+  display:block;height:0
+}

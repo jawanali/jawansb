@@ -49,13 +49,12 @@
         <span id="lblN">EXPERIENCES</span>
       </div>
     </section>
-    <div id="fsum" class="mute" style="margin-top:10px"></div>
     <details class="fs" id="fs"><summary>Filter &amp; sort<span id="fcount"></span></summary>
       <div class="fsb"><input id="tq" class="tq" placeholder="Search tags…" autocomplete="off"><div id="tags"></div></div>
     </details>
    </aside>
    <div>
-    <h2>Journal</h2>
+    <h2>Experiences</h2>
     <div id="journal"></div>
    </div>
   </main>
@@ -73,7 +72,7 @@
     <div class="xe"><label>Rating <span id="rv" style="text-transform:none;letter-spacing:0"></span></label><div id="pick" class="pk"></div></div>
     <label id="dl">Description</label><textarea id="d"></textarea>
     <label>Photos</label><div id="ph"></div><input id="fi" type="file" accept="image/*" multiple>
-    <label>Photos go under</label><select id="imgAt"></select>
+    <label id="layl">Preview · drag the photos to move them</label><div id="lay" class="lay"></div>
     <label class="chk"><input id="pub" type="checkbox"> Public (anyone visiting your site can see this)</label>
     <div id="err"></div>
     <button class="go" id="go" data-act="save">LOG</button>

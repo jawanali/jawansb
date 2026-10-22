@@ -6,7 +6,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 // Copied links start with your site's address, e.g. https://jawansb.com
 const BASE = location.origin;
 // The three tag categories, in the order they appear everywhere: [storage name, label, placeholder]
-const KINDS = [['types', 'Type', 'Add type'], ['people', 'People', 'Add person'], ['places', 'Location', 'Add place']];
+const KINDS = [['types', 'Type'], ['people', 'People'], ['places', 'Location']];
 const sel = {types: new Set(), people: new Set(), places: new Set()};
 let all = [], loaded = false, assets = true, page = 'exp', focus = null, sortBy = 'date', sortDir = 'desc', draft = null;
 const ents = () => all.filter(x => !x.kind), posts = () => all.filter(x => x.kind === 'post');
@@ -101,7 +101,7 @@ async function doLogin() {
 const agg = l => { const exp = l.reduce((a, e) => a + e.minutes, 0); return {exp, n: l.length, qol: exp ? l.reduce((a, e) => a + e.rating * e.minutes, 0) / exp : 0}; };
 const stars = r => `<span>${[1, 2, 3, 4, 5].map(i => `<span class="st" data-i="${i}"><i style="width:${Math.max(0, Math.min(1, r - i + 1)) * 100}%">★</i>★</span>`).join('')}</span>`;
 const dur = m => (m >= 60 ? Math.floor(m / 60) + 'h ' : '') + (m % 60 ? m % 60 + 'm' : (m >= 60 ? '' : '0m'));
-const imgSrc = s => s.startsWith('data:') || s.startsWith('http') || !sb ? s : sb.storage.from('photos').getPublicUrl(s).data.publicUrl;
+const imgSrc = s => /^(data:|blob:|http)/.test(s) || !sb ? s : sb.storage.from('photos').getPublicUrl(s).data.publicUrl;
 const cmp = (a, b) => {
   const k = {date: e => e.start, exp: e => e.minutes, rating: e => e.rating}[sortBy], x = k(a), y = k(b);
   const c = typeof x === 'string' ? x.localeCompare(y) : x - y;
@@ -114,25 +114,32 @@ const dirBtn = () => {
 
 /* --- DRAWING THE SCREEN --- */
 const gal = e => (e.images || []).length ? `<div class="gal">${e.images.map(i => `<img class="th" loading="lazy" alt="" src="${esc(imgSrc(i))}">`).join('')}</div>` : '';
-const acts = (p, x) => (owner ? `<button class="link" data-act="edit" data-v="${x.id}" style="margin-right:12px">Edit</button><button class="link" data-act="del" data-v="${x.id}" style="margin-right:12px">Delete</button>` : '') + (owner && !x.is_public ? '<span class="pill" style="margin-right:12px">Private</span>' : '') + `<button class="link" data-act="link" data-v="/${p}${x.num ? '/' + x.num : ''}">Copy link</button>`;
+// Edit / Delete / Copy link: small icons in the bottom-right corner of each card (hover for the name)
+const ICONS = {
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  del: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>'
+};
+const ib = (act, v, label) => `<button class="ib" data-act="${act}" data-v="${v}" title="${label}" aria-label="${label}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[act]}</svg></button>`;
+const acts = (p, x) => `<div class="acts">${owner && !x.is_public ? '<span class="pill">Private</span>' : ''}${owner ? ib('edit', x.id, 'Edit') + ib('del', x.id, 'Delete') : ''}${ib('link', `/${p}${x.num ? '/' + x.num : ''}`, 'Copy link')}</div>`;
 // Clicking a title opens that item on its own page (/exp/3)
 const ttl = (p, x) => `<h4>${x.num ? `<a href="/${p}/${x.num}" data-act="go" data-v="${p}/${x.num}">${esc(x.title)}</a>` : esc(x.title)}</h4>`;
-// Where photos can go, for each kind of item. The value is saved on the item as "imgAt"; "desc" is the default.
-const SPOTS = {e: [['title', 'Title'], ['type', 'Type tags'], ['rating', 'Rating'], ['desc', 'Description'], ['tags', 'People & location']], b: [['title', 'Title'], ['desc', 'Body']]};
-const card = e => {
+// Photos go in one of these spots, saved on the item as "imgAt": title, type, rating, desc (the default) or tags.
+// "pv" = drawing the live preview inside the form: no buttons, plus invisible markers at every spot photos can be dragged to.
+const card = (e, pv) => {
   const s = new Date(e.start), en = new Date(e.end), tm = x => x.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
-  const at = w => (e.imgAt || 'desc') === w ? gal(e) : '';
+  const at = w => (pv ? `<i class="slot" data-spot="${w}"></i>` : '') + ((e.imgAt || 'desc') === w ? gal(e) : '');
   const grp = (k, w) => tagsOf(e, k).length ? `<span class="grp"><em>${w}</em>${tagsOf(e, k).map(n => chip(k, n)).join('')}</span>` : '';
   const types = tagsOf(e, 'types').length ? `<div class="types">${tagsOf(e, 'types').map(n => chip('types', n)).join('')}</div>` : '';
   const ptags = grp('people', 'with') + grp('places', 'at');
-  return `<div class="card entry" id="e-${e.id}"><div class="top"><span>${s.toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'})} · ${tm(s)}–${tm(en)}</span><span>${dur(e.minutes)} · +${e.minutes} EXP</span></div>
-  ${ttl('exp', e)}${at('title')}${types}${at('type')}${stars(e.rating)}${at('rating')}${e.desc ? `<p>${esc(e.desc)}</p>` : ''}${at('desc')}
-  ${ptags ? `<div class="ptags">${ptags}</div>` : ''}${at('tags')}${acts('exp', e)}</div>`;
+  return `<div class="card entry" id="e-${e.id}">${ttl('exp', e)}<div class="top"><span>${s.toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'})} · ${tm(s)}–${tm(en)}</span><span>${dur(e.minutes)} · +${e.minutes} EXP</span></div>
+  ${at('title')}${types}${at('type')}${stars(e.rating)}${at('rating')}${e.desc ? `<p>${esc(e.desc)}</p>` : ''}${at('desc')}
+  ${ptags ? `<div class="ptags">${ptags}</div>` : ''}${at('tags')}${pv ? '' : acts('exp', e)}</div>`;
 };
-const bcard = p => {
-  const at = w => (p.imgAt || 'desc') === w ? gal(p) : '';
-  return `<div class="card entry" id="b-${p.id}"><div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>
-  ${ttl('blog', p)}${at('title')}${p.body ? `<p>${esc(p.body)}</p>` : ''}${at('desc')}${acts('blog', p)}</div>`;
+const bcard = (p, pv) => {
+  const at = w => (pv ? `<i class="slot" data-spot="${w}"></i>` : '') + ((p.imgAt || 'desc') === w ? gal(p) : '');
+  return `<div class="card entry" id="b-${p.id}">${ttl('blog', p)}<div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>
+  ${at('title')}${p.body ? `<p>${esc(p.body)}</p>` : ''}${at('desc')}${pv ? '' : acts('blog', p)}</div>`;
 };
 
 function render() {
@@ -148,7 +155,6 @@ function render() {
   $('lblExp').textContent = filtered ? 'FILTERED EXP' : 'TOTAL EXP'; $('lblQ').textContent = filtered ? 'FILTERED QoL' : 'QUALITY OF LIFE'; $('lblN').textContent = filtered ? 'MATCHING' : 'EXPERIENCES';
   $('statsBox').classList.toggle('hot', filtered);
   $('fcount').textContent = filtered ? ' · ' + KINDS.reduce((n, [k]) => n + sel[k].size, 0) + ' active' : '';
-  $('fsum').innerHTML = filtered ? `Viewing ${KINDS.flatMap(([k]) => [...sel[k]]).map(esc).join(' + ')} · ${f.length} of ${E.length} experiences <button class="link" data-act="clear">Clear filters</button>` : '';
   // filter buttons, colored like their tags, with each tag's own EXP and QoL
   const rows = ([k, l]) => {
     const m = {}; E.forEach(e => tagsOf(e, k).forEach(n => (m[n] = m[n] || []).push(e)));
@@ -203,13 +209,45 @@ async function setColor(k, n, v) { const c = {...colors()}; if (v) c[k + ':' + n
 const loc = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
 const goLabel = () => draft.editId ? 'SAVE CHANGES' : draft.kind === 'b' ? 'POST' : 'LOG';
 // Type gets its own line; People and Location share one line. Press Enter after typing a tag.
-const tfBlock = ([k, l, ph]) => `<div><label>${l}</label><div id="c-${k}"></div><input id="i-${k}" data-k="${k}" list="l-${k}" placeholder="${ph} ⏎"><datalist id="l-${k}"></datalist></div>`;
+// While you type, tags you've used before that match show up underneath (#s-types etc.).
+const tfBlock = ([k, l]) => `<div class="tin"><label>${l}</label><div id="c-${k}"></div><input id="i-${k}" data-k="${k}" autocomplete="off"><div class="sug" id="s-${k}" hidden></div></div>`;
 $('tf').innerHTML = tfBlock(KINDS[0]) + `<div class="two">${tfBlock(KINDS[1])}${tfBlock(KINDS[2])}</div>`;
 function drawDraft() {
   KINDS.forEach(([k]) => $('c-' + k).innerHTML = draft[k].map(n => `<span class="chip" style="${ts(k, n)}">${esc(n)}<button class="x" data-act="rmTag" data-k="${k}" data-v="${esc(n)}">✕</button></span>`).join(''));
   $('pick').innerHTML = stars(draft.rating); $('rv').textContent = draft.rating ? draft.rating + ' / 5' : '';
   $('ph').innerHTML = draft.imgs.map((im, i) => `<span class="pv"><img class="th" src="${im.url}" alt=""><button data-act="rmI" data-v="${i}">✕</button></span>`).join('');
+  drawLay();
 }
+function suggest(k) {
+  const q = $('i-' + k).value.trim().toLowerCase(), box = $('s-' + k);
+  const known = [...new Set(ents().flatMap(e => tagsOf(e, k)))].filter(n => !draft[k].includes(n));
+  const starts = n => n.toLowerCase().startsWith(q);
+  const hits = q ? known.filter(n => n.toLowerCase().includes(q)).sort((a, b) => starts(b) - starts(a)).slice(0, 6) : [];
+  box.innerHTML = hits.map(n => `<button type="button" class="sg" data-act="pick" data-k="${k}" data-v="${esc(n)}">${esc(n)}</button>`).join('');
+  box.hidden = !hits.length;
+}
+/* --- LIVE PREVIEW in the form: the post as it will look, from what's typed so far.
+       Drag the photos up or down; they jump to the nearest spot as you go. --- */
+function drawLay() {
+  const box = $('lay'); box.hidden = $('layl').hidden = !draft.imgs.length;
+  if (box.hidden) return;
+  const ok = d => isNaN(d) ? new Date() : d, s = ok(new Date($('s').value)), e = ok(new Date($('e').value));
+  const x = {title: $('t').value.trim() || 'Untitled', images: draft.imgs.map(im => im.url), imgAt: draft.imgAt, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places};
+  box.innerHTML = draft.kind === 'b' ? bcard({...x, body: $('d').value.trim(), created: new Date().toISOString()}, true)
+    : card({...x, desc: $('d').value.trim(), start: s.toISOString(), end: e.toISOString(), minutes: Math.max(0, Math.round((e - s) / 6e4))}, true);
+}
+let dragging = false;
+$('lay').addEventListener('pointerdown', ev => { if (!ev.target.closest('.gal')) return; ev.preventDefault(); dragging = true; $('lay').classList.add('dragging'); $('lay').setPointerCapture(ev.pointerId); });
+$('lay').addEventListener('pointermove', ev => {
+  if (!dragging) return;
+  const slots = [...$('lay').querySelectorAll('.slot')], d = el => Math.abs(el.getBoundingClientRect().top - ev.clientY);
+  const best = slots.reduce((a, b) => d(b) < d(a) ? b : a), cur = slots.find(el => el.dataset.spot === draft.imgAt);
+  // only move when clearly closer to another spot, so the photos don't flicker back and forth
+  if (!cur || (best !== cur && d(best) + 24 < d(cur))) { draft.imgAt = best.dataset.spot; drawLay(); }
+});
+const endDrag = () => { dragging = false; $('lay').classList.remove('dragging'); };
+$('lay').addEventListener('pointerup', endDrag); $('lay').addEventListener('pointercancel', endDrag);
+['t', 'd', 's', 'e'].forEach(id => $(id).addEventListener('input', drawLay));
 function updExp() { const m = Math.round((new Date($('e').value) - new Date($('s').value)) / 6e4); $('exp').textContent = m > 0 ? '+' + m + ' EXP' : ''; }
 function addTag(k) {
   const el = $('i-' + k), v = el.value.trim().replace(/,$/, '').trim(); el.value = '';
@@ -219,7 +257,7 @@ function addTag(k) {
   drawDraft();
 }
 function openModal(kind, old) {
-  draft = {kind, rating: 0, types: [], people: [], places: [], imgs: []};
+  draft = {kind, rating: 0, types: [], people: [], places: [], imgs: [], imgAt: (old && old.imgAt) || 'desc'};
   if (old) draft = {...draft, rating: old.rating || 0, imgs: (old.images || []).map(r => ({ref: r, url: imgSrc(r)})), editId: old.id, old, ...Object.fromEntries(KINDS.map(([k]) => [k, [...tagsOf(old, k)]]))};
   const now = new Date();
   $('s').value = loc(old && old.start ? new Date(old.start) : new Date(now - 36e5)); $('e').value = loc(old && old.end ? new Date(old.end) : now);
@@ -227,9 +265,7 @@ function openModal(kind, old) {
   document.querySelectorAll('.xe').forEach(x => x.hidden = kind === 'b');
   $('mh').textContent = (old ? 'Edit ' : 'New ') + (kind === 'b' ? 'post' : 'experience');
   $('dl').textContent = kind === 'b' ? 'Body' : 'Description';
-  KINDS.forEach(([k]) => $('l-' + k).innerHTML = [...new Set(ents().flatMap(e => tagsOf(e, k)))].map(n => `<option value="${esc(n)}">`).join(''));
   $('pub').checked = old ? !!old.is_public : false;
-  $('imgAt').innerHTML = SPOTS[kind].map(([v, l]) => `<option value="${v}">${l}</option>`).join(''); $('imgAt').value = (old && old.imgAt) || 'desc';
   $('go').disabled = false; $('go').textContent = goLabel(); $('err').textContent = '';
   drawDraft(); updExp(); $('modal').hidden = false; $('s').focus();
 }
@@ -263,7 +299,7 @@ async function save() {
   try { for (const im of draft.imgs) images.push(im.ref || await upImg(im.blob)); }
   catch (x) { return fail('Photo upload failed: ' + x.message); }
   const id = draft.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), d = $('d').value.trim(), is_public = $('pub').checked;
-  const num = (draft.old && draft.old.num) || nextNum(b ? posts() : ents()), imgAt = $('imgAt').value;
+  const num = (draft.old && draft.old.num) || nextNum(b ? posts() : ents()), imgAt = draft.imgAt;
   const ok = await put(b ? {kind: 'post', id, num, is_public, title: t, body: d, images, imgAt, created: draft.old ? draft.old.created : new Date().toISOString()}
     : {id, num, is_public, title: t, desc: d, start: s.toISOString(), end: e.toISOString(), minutes: m, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgAt});
   if (!ok) return fail('Could not save. Are you still logged in?');
@@ -290,6 +326,7 @@ async function copyLink(v) {
 
 /* --- CLICKS: one listener handles every button, based on its data-act label --- */
 document.addEventListener('click', ev => {
+  if (ev.target.closest('#lay')) return;   // the form's preview is look-only
   const pk = ev.target.closest('.pk .st');
   if (pk) { const r = pk.getBoundingClientRect(); draft.rating = +pk.dataset.i - 1 + (ev.clientX - r.left < r.width / 2 ? 0.5 : 1); drawDraft(); return; }
   const b = ev.target.closest('[data-act]'); if (!b) return;
@@ -304,7 +341,7 @@ document.addEventListener('click', ev => {
     tog(sel[k]); const on = sel[k].has(v); if (on) fsOpen(true);
     if (focus) nav('/exp'); else { render(); if (on) scrollTo(0, 0); }
   }
-  else if (a === 'clear') { KINDS.forEach(([x]) => sel[x].clear()); render(); }
+  else if (a === 'pick') { $('i-' + k).value = v; addTag(k); suggest(k); }   // clicked a tag suggestion
   else if (a === 'rmTag') { draft[k] = draft[k].filter(n => n !== v); drawDraft(); }
   else if (a === 'rmI') { draft.imgs.splice(+v, 1); drawDraft(); }
   else if (a === 'sortBy') { sortBy = v; render(); }
@@ -318,10 +355,24 @@ document.addEventListener('click', ev => {
   else if (a === 'resetc') setColor(k, v, null);
   else if (a === 'del') {
     if (b.dataset.arm) del(v);
-    else { b.dataset.arm = 1; b.textContent = 'Tap again to confirm'; setTimeout(() => { delete b.dataset.arm; b.textContent = 'Delete'; }, 3000); }
+    else { b.dataset.arm = 1; b.classList.add('arm'); b.title = 'Tap again to delete'; flash('Tap the trash icon again to delete');
+      setTimeout(() => { delete b.dataset.arm; b.classList.remove('arm'); b.title = 'Delete'; }, 3000); }
   }
 });
-$('tf').addEventListener('keydown', ev => { if (ev.target.dataset.k && (ev.key === 'Enter' || ev.key === ',')) { ev.preventDefault(); addTag(ev.target.dataset.k); } });
+// tag boxes: Enter (or a comma) adds what you typed; ↑/↓ pick a suggestion first; Esc hides suggestions
+$('tf').addEventListener('keydown', ev => {
+  const k = ev.target.dataset.k; if (!k) return;
+  const box = $('s-' + k), opts = box.hidden ? [] : [...box.querySelectorAll('.sg')], i = opts.findIndex(o => o.classList.contains('hi'));
+  if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && opts.length) {
+    ev.preventDefault(); opts.forEach(o => o.classList.remove('hi'));
+    opts[(i + (ev.key === 'ArrowDown' ? 1 : opts.length - 1 + (i < 0 ? 1 : 0))) % opts.length].classList.add('hi');
+  }
+  else if (ev.key === 'Enter' || ev.key === ',') { ev.preventDefault(); if (i >= 0) ev.target.value = opts[i].dataset.v; addTag(k); suggest(k); }
+  else if (ev.key === 'Escape') box.hidden = true;
+});
+$('tf').addEventListener('input', ev => { if (ev.target.dataset.k) suggest(ev.target.dataset.k); });
+$('tf').addEventListener('mousedown', ev => { if (ev.target.closest('.sug')) ev.preventDefault(); });   // clicking a suggestion keeps you typing in the box
+$('tf').addEventListener('focusout', ev => { if (ev.target.dataset.k) $('s-' + ev.target.dataset.k).hidden = true; });
 $('s').addEventListener('input', updExp); $('e').addEventListener('input', updExp);
 // color pickers in Settings: preview live while dragging, save when the picker closes
 $('pgSet').addEventListener('input', ev => { if (ev.target.type === 'color') { const c = ev.target.previousElementSibling; c.style.background = ev.target.value; c.style.color = ink(ev.target.value); } });
