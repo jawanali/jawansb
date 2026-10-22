@@ -379,7 +379,6 @@ h3{
 .gal{
   display:flex;
   flex-wrap:wrap;
-  justify-content:center;
   gap:6px;
   margin:8px 0
 }
