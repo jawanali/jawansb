@@ -11,6 +11,7 @@
     --on:#000;
     --acc2:#241a12;
     --star:#2DD881;
+    --star-off:#5f6b85;  /* empty stars */
     --panel:#3A435E;     /* solid background for pop-up windows (--card is see-through) */
  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);
  padding-bottom:env(safe-area-inset-bottom,0px)
@@ -26,6 +27,7 @@
     --on:#fff;
     --acc2:#f2f2f2;
     --star:#e69500;
+    --star-off:#cfcfcf;
     --panel:#fff}
 
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
@@ -85,19 +87,28 @@ header{
 
 /* ===== EXP PAGE LAYOUT: stats + filters in a left column, journal on the right.
    On phones (narrower than 720px) there isn't room, so the column sits on top instead. ===== */
+/* The "Experiences" heading sits in its own row above the posts, so the stats start level with the first post. */
 .cols{
-  display:grid;grid-template-columns:240px 1fr;gap:32px;align-items:start
+  display:grid;grid-template-columns:240px 1fr;gap:0 32px;align-items:start
+}
+.fh{
+  grid-column:2;grid-row:1;margin:16px 0 10px
 }
 .side{
-  position:sticky;top:16px
+  grid-column:1;grid-row:2;position:sticky;top:16px
+}
+#journal{
+  grid-column:2;grid-row:2
 }
 .cols .stats{
-  grid-template-columns:1fr
+  grid-template-columns:1fr;margin-top:0
 }
 @media (max-width:720px){
-  .cols{grid-template-columns:1fr;gap:0}
-  .side{position:static}
-  .cols .stats{grid-template-columns:repeat(3,1fr)}
+  .cols{grid-template-columns:1fr}
+  .side{grid-column:1;grid-row:1;position:static}
+  .fh{grid-column:1;grid-row:2}
+  #journal{grid-column:1;grid-row:3}
+  .cols .stats{grid-template-columns:repeat(3,1fr);margin-top:16px}
 }
 
 .hr{
@@ -323,9 +334,6 @@ h3{
 .grp em{
   font-style:normal;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--mute);margin-right:6px
 }
-.cols h2:first-child{
-  margin-top:16px                      /* line "Journal" up with the top of the stats */
-}
 
 .x{
   background:none;
@@ -349,7 +357,7 @@ h3{
 .st{
   position:relative;
   display:inline-block;
-  color:var(--line);
+  color:var(--star-off);
   line-height:1
 }
 
@@ -371,13 +379,14 @@ h3{
 .gal{
   display:flex;
   flex-wrap:wrap;
+  justify-content:center;
   gap:6px;
-  margin:6px 0
+  margin:8px 0
 }
 
 /* photo previews: fixed height, width follows the photo's shape, so the whole image shows (nothing cropped) */
 .th{
-  height:130px;
+  height:195px;
   width:auto;
   max-width:100%;
   object-fit:contain;
@@ -480,10 +489,11 @@ textarea{
 }
 
 .expv{
-  font:700 22px ui-monospace,Menlo,monospace;
+  font:400 15px Roboto,system-ui,sans-serif;
+  letter-spacing:.5px;
   color:var(--acc);
   margin-top:8px;
-  min-height:28px
+  min-height:20px
 }
 
 .go{
@@ -577,22 +587,26 @@ textarea{
   background:var(--line)
 }
 
-/* ===== LIVE PREVIEW in the form: drag the photos to a new spot ===== */
-.lay{
-  border:1px dashed var(--line);padding:8px;background:var(--bg)
+/* ===== MOVABLE FORM BLOCKS: drag by the ⠿ handle in the top-right corner ===== */
+.sec{
+  position:relative;padding:2px 26px 10px 0;border-top:1px dashed transparent
 }
-.lay .card{
-  margin:0
+.sec:hover{
+  border-top-color:var(--line)
 }
-.lay .th{
-  height:80px
+.grip{
+  position:absolute;top:12px;right:2px;font-size:18px;line-height:1;color:var(--mute);
+  cursor:grab;touch-action:none;user-select:none
 }
-.lay .gal{
-  cursor:grab;touch-action:none;outline:1px dashed var(--acc);outline-offset:3px
+.grip:hover{
+  color:var(--ink)
 }
-.lay.dragging .gal{
-  cursor:grabbing;opacity:.7
+.sec.dragging{
+  background:var(--bg);outline:1px dashed var(--acc);opacity:.85
 }
-.slot{
-  display:block;height:0
+.sec.dragging .grip{
+  cursor:grabbing
+}
+.pv .th{
+  height:80px                          /* photo thumbnails inside the form stay small */
 }

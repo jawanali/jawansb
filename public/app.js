@@ -124,22 +124,33 @@ const ib = (act, v, label) => `<button class="ib" data-act="${act}" data-v="${v}
 const acts = (p, x) => `<div class="acts">${owner && !x.is_public ? '<span class="pill">Private</span>' : ''}${owner ? ib('edit', x.id, 'Edit') + ib('del', x.id, 'Delete') : ''}${ib('link', `/${p}${x.num ? '/' + x.num : ''}`, 'Copy link')}</div>`;
 // Clicking a title opens that item on its own page (/exp/3)
 const ttl = (p, x) => `<h4>${x.num ? `<a href="/${p}/${x.num}" data-act="go" data-v="${p}/${x.num}">${esc(x.title)}</a>` : esc(x.title)}</h4>`;
-// Photos go in one of these spots, saved on the item as "imgAt": title, type, rating, desc (the default) or tags.
-// "pv" = drawing the live preview inside the form: no buttons, plus invisible markers at every spot photos can be dragged to.
-const card = (e, pv) => {
+/* --- POST LAYOUT: each post is built from blocks, shown in the order saved on it ("order").
+       Posts without one use the default below. (Older posts may have "imgAt" = which block their photos sat under.) --- */
+const ORDER = ['title', 'time', 'tags', 'rating', 'desc', 'photos'];
+const orderOf = x => {
+  let o = x.order;
+  if (!o) { o = ORDER.filter(k => k !== 'photos'); const after = {type: 'tags', tags: 'tags'}[x.imgAt] || x.imgAt || 'desc'; o.splice(o.indexOf(after) + 1, 0, 'photos'); }
+  return [...o, ...ORDER.filter(k => !o.includes(k))];   // any block added in the future still shows up
+};
+const card = e => {
   const s = new Date(e.start), en = new Date(e.end), tm = x => x.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
-  const at = w => (pv ? `<i class="slot" data-spot="${w}"></i>` : '') + ((e.imgAt || 'desc') === w ? gal(e) : '');
   const grp = (k, w) => tagsOf(e, k).length ? `<span class="grp"><em>${w}</em>${tagsOf(e, k).map(n => chip(k, n)).join('')}</span>` : '';
   const types = tagsOf(e, 'types').length ? `<div class="types">${tagsOf(e, 'types').map(n => chip('types', n)).join('')}</div>` : '';
   const ptags = grp('people', 'with') + grp('places', 'at');
-  return `<div class="card entry" id="e-${e.id}">${ttl('exp', e)}<div class="top"><span>${s.toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'})} · ${tm(s)}–${tm(en)}</span><span>${dur(e.minutes)} · +${e.minutes} EXP</span></div>
-  ${at('title')}${types}${at('type')}${stars(e.rating)}${at('rating')}${e.desc ? `<p>${esc(e.desc)}</p>` : ''}${at('desc')}
-  ${ptags ? `<div class="ptags">${ptags}</div>` : ''}${at('tags')}${pv ? '' : acts('exp', e)}</div>`;
+  const parts = {
+    title: ttl('exp', e),
+    time: `<div class="top"><span>${s.toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'})} · ${tm(s)}–${tm(en)}</span><span>${dur(e.minutes)} · +${e.minutes} EXP</span></div>`,
+    tags: types + (ptags ? `<div class="ptags">${ptags}</div>` : ''),
+    rating: `<div class="rt">${stars(e.rating)}</div>`,
+    desc: e.desc ? `<p>${esc(e.desc)}</p>` : '',
+    photos: gal(e)
+  };
+  return `<div class="card entry" id="e-${e.id}">${orderOf(e).map(k => parts[k] || '').join('')}${acts('exp', e)}</div>`;
 };
-const bcard = (p, pv) => {
-  const at = w => (pv ? `<i class="slot" data-spot="${w}"></i>` : '') + ((p.imgAt || 'desc') === w ? gal(p) : '');
-  return `<div class="card entry" id="b-${p.id}">${ttl('blog', p)}<div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>
-  ${at('title')}${p.body ? `<p>${esc(p.body)}</p>` : ''}${at('desc')}${pv ? '' : acts('blog', p)}</div>`;
+const bcard = p => {
+  const parts = {title: ttl('blog', p), time: `<div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>`,
+    desc: p.body ? `<p>${esc(p.body)}</p>` : '', photos: gal(p)};
+  return `<div class="card entry" id="b-${p.id}">${orderOf(p).map(k => parts[k] || '').join('')}${acts('blog', p)}</div>`;
 };
 
 function render() {
@@ -216,7 +227,6 @@ function drawDraft() {
   KINDS.forEach(([k]) => $('c-' + k).innerHTML = draft[k].map(n => `<span class="chip" style="${ts(k, n)}">${esc(n)}<button class="x" data-act="rmTag" data-k="${k}" data-v="${esc(n)}">✕</button></span>`).join(''));
   $('pick').innerHTML = stars(draft.rating); $('rv').textContent = draft.rating ? draft.rating + ' / 5' : '';
   $('ph').innerHTML = draft.imgs.map((im, i) => `<span class="pv"><img class="th" src="${im.url}" alt=""><button data-act="rmI" data-v="${i}">✕</button></span>`).join('');
-  drawLay();
 }
 function suggest(k) {
   const q = $('i-' + k).value.trim().toLowerCase(), box = $('s-' + k);
@@ -226,28 +236,23 @@ function suggest(k) {
   box.innerHTML = hits.map(n => `<button type="button" class="sg" data-act="pick" data-k="${k}" data-v="${esc(n)}">${esc(n)}</button>`).join('');
   box.hidden = !hits.length;
 }
-/* --- LIVE PREVIEW in the form: the post as it will look, from what's typed so far.
-       Drag the photos up or down; they jump to the nearest spot as you go. --- */
-function drawLay() {
-  const box = $('lay'); box.hidden = $('layl').hidden = !draft.imgs.length;
-  if (box.hidden) return;
-  const ok = d => isNaN(d) ? new Date() : d, s = ok(new Date($('s').value)), e = ok(new Date($('e').value));
-  const x = {title: $('t').value.trim() || 'Untitled', images: draft.imgs.map(im => im.url), imgAt: draft.imgAt, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places};
-  box.innerHTML = draft.kind === 'b' ? bcard({...x, body: $('d').value.trim(), created: new Date().toISOString()}, true)
-    : card({...x, desc: $('d').value.trim(), start: s.toISOString(), end: e.toISOString(), minutes: Math.max(0, Math.round((e - s) / 6e4))}, true);
-}
-let dragging = false;
-$('lay').addEventListener('pointerdown', ev => { if (!ev.target.closest('.gal')) return; ev.preventDefault(); dragging = true; $('lay').classList.add('dragging'); $('lay').setPointerCapture(ev.pointerId); });
-$('lay').addEventListener('pointermove', ev => {
-  if (!dragging) return;
-  const slots = [...$('lay').querySelectorAll('.slot')], d = el => Math.abs(el.getBoundingClientRect().top - ev.clientY);
-  const best = slots.reduce((a, b) => d(b) < d(a) ? b : a), cur = slots.find(el => el.dataset.spot === draft.imgAt);
-  // only move when clearly closer to another spot, so the photos don't flicker back and forth
-  if (!cur || (best !== cur && d(best) + 24 < d(cur))) { draft.imgAt = best.dataset.spot; drawLay(); }
+/* --- MOVABLE FORM: drag a block by its ⠿ handle; the others make room as you go.
+       When you save, the blocks' order becomes the post's "order". --- */
+let dragSec = null;
+$('secs').addEventListener('pointerdown', ev => {
+  if (!ev.target.closest('.grip')) return;
+  ev.preventDefault(); dragSec = ev.target.closest('.sec'); dragSec.classList.add('dragging'); $('secs').setPointerCapture(ev.pointerId);
 });
-const endDrag = () => { dragging = false; $('lay').classList.remove('dragging'); };
-$('lay').addEventListener('pointerup', endDrag); $('lay').addEventListener('pointercancel', endDrag);
-['t', 'd', 's', 'e'].forEach(id => $(id).addEventListener('input', drawLay));
+$('secs').addEventListener('pointermove', ev => {
+  if (!dragSec) return;
+  // the first block whose middle is below the pointer: the dragged block goes just before it (or last, if none)
+  const next = [...$('secs').children].find(x => x !== dragSec && !x.hidden && ev.clientY < x.getBoundingClientRect().top + x.offsetHeight / 2) || null;
+  if (dragSec.nextElementSibling !== next) $('secs').insertBefore(dragSec, next);
+  // near the top or bottom of the screen: scroll the form so you can drag past what's visible
+  if (ev.clientY < 60) $('modal').scrollBy(0, -12); else if (ev.clientY > innerHeight - 60) $('modal').scrollBy(0, 12);
+});
+const endSec = () => { if (dragSec) dragSec.classList.remove('dragging'); dragSec = null; };
+$('secs').addEventListener('pointerup', endSec); $('secs').addEventListener('pointercancel', endSec);
 function updExp() { const m = Math.round((new Date($('e').value) - new Date($('s').value)) / 6e4); $('exp').textContent = m > 0 ? '+' + m + ' EXP' : ''; }
 function addTag(k) {
   const el = $('i-' + k), v = el.value.trim().replace(/,$/, '').trim(); el.value = '';
@@ -257,7 +262,8 @@ function addTag(k) {
   drawDraft();
 }
 function openModal(kind, old) {
-  draft = {kind, rating: 0, types: [], people: [], places: [], imgs: [], imgAt: (old && old.imgAt) || 'desc'};
+  draft = {kind, rating: 0, types: [], people: [], places: [], imgs: []};
+  orderOf(old || {}).map(k => $('secs').querySelector(`[data-sec="${k}"]`)).filter(Boolean).forEach(x => $('secs').appendChild(x));   // lay the blocks out in this post's order
   if (old) draft = {...draft, rating: old.rating || 0, imgs: (old.images || []).map(r => ({ref: r, url: imgSrc(r)})), editId: old.id, old, ...Object.fromEntries(KINDS.map(([k]) => [k, [...tagsOf(old, k)]]))};
   const now = new Date();
   $('s').value = loc(old && old.start ? new Date(old.start) : new Date(now - 36e5)); $('e').value = loc(old && old.end ? new Date(old.end) : now);
@@ -267,7 +273,7 @@ function openModal(kind, old) {
   $('dl').textContent = kind === 'b' ? 'Body' : 'Description';
   $('pub').checked = old ? !!old.is_public : false;
   $('go').disabled = false; $('go').textContent = goLabel(); $('err').textContent = '';
-  drawDraft(); updExp(); $('modal').hidden = false; $('s').focus();
+  drawDraft(); updExp(); $('modal').hidden = false; $('t').focus();
 }
 // Photos are shrunk in your browser before saving, so uploads stay small and fast.
 const asData = b => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(b); });
@@ -299,9 +305,9 @@ async function save() {
   try { for (const im of draft.imgs) images.push(im.ref || await upImg(im.blob)); }
   catch (x) { return fail('Photo upload failed: ' + x.message); }
   const id = draft.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), d = $('d').value.trim(), is_public = $('pub').checked;
-  const num = (draft.old && draft.old.num) || nextNum(b ? posts() : ents()), imgAt = draft.imgAt;
-  const ok = await put(b ? {kind: 'post', id, num, is_public, title: t, body: d, images, imgAt, created: draft.old ? draft.old.created : new Date().toISOString()}
-    : {id, num, is_public, title: t, desc: d, start: s.toISOString(), end: e.toISOString(), minutes: m, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgAt});
+  const num = (draft.old && draft.old.num) || nextNum(b ? posts() : ents()), order = [...$('secs').children].map(x => x.dataset.sec);
+  const ok = await put(b ? {kind: 'post', id, num, is_public, title: t, body: d, images, order, created: draft.old ? draft.old.created : new Date().toISOString()}
+    : {id, num, is_public, title: t, desc: d, start: s.toISOString(), end: e.toISOString(), minutes: m, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, order});
   if (!ok) return fail('Could not save. Are you still logged in?');
   const gone = draft.old ? (draft.old.images || []).filter(i => !images.includes(i)) : [];
   if (gone.length) await sb.storage.from('photos').remove(gone);
@@ -326,7 +332,6 @@ async function copyLink(v) {
 
 /* --- CLICKS: one listener handles every button, based on its data-act label --- */
 document.addEventListener('click', ev => {
-  if (ev.target.closest('#lay')) return;   // the form's preview is look-only
   const pk = ev.target.closest('.pk .st');
   if (pk) { const r = pk.getBoundingClientRect(); draft.rating = +pk.dataset.i - 1 + (ev.clientX - r.left < r.width / 2 ? 0.5 : 1); drawDraft(); return; }
   const b = ev.target.closest('[data-act]'); if (!b) return;
