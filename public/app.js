@@ -189,7 +189,7 @@ const card = (e, pv) => {
 };
 /* --- THE BOARD (EXP page): the newest post shown in full on top, every other one as a preview card packed below like a bulletin board.
        The board is a grid of narrow columns and 10px rows. Each card spans some columns (pvC, default 2) and as many rows as it is tall
-       (pvR if you've sized it, otherwise its natural height, up to 300px). "dense" packing lets small cards fill gaps left by big ones.
+       (pvR if you've sized it in "Edit preview card", otherwise its natural height, up to 300px). "dense" packing lets small cards fill gaps left by big ones.
        ↗ on a card expands it to a full post right where it is; the grid repacks around it. ↙ shrinks it back. --- */
 const PV_PARTS = [['title', 'Title'], ['time', 'Date & EXP'], ['type', 'Type'], ['tags', 'People & location'], ['rating', 'Rating'], ['desc', 'Description'], ['photos', 'Photos']];
 const PV_DEFAULT = ['title', 'time', 'type', 'rating', 'desc', 'photos'];   // what a card shows until you choose
@@ -198,10 +198,10 @@ const opened = new Set();   // ids of the cards you've expanded
 const ARROW = {open: '<path d="M14 10l7-7M21 9V3h-6M10 14l-7 7M3 15v6h6"/>', shut: '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>'};
 const boardCard = e => {
   const open = opened.has(e.id), show = e.pvShow || PV_DEFAULT;
-  const html = open ? card(e) : card(e, show);
+  const html = open ? card(e) : card({...e, order: e.pvOrder || orderOf(e)}, show);   // pvOrder = the card's own order of parts, if you've set one
   return `<div class="bi${open ? ' open' : ''}" data-id="${e.id}" data-c="${open ? FULL_COLS : e.pvC || 2}"${!open && e.pvR ? ` data-r="${e.pvR}"` : ''}>${html}` +
     `<button class="xp" data-act="expand" data-v="${e.id}" title="${open ? 'Shrink back to a card' : 'Open the full post here'}" aria-label="${open ? 'Shrink' : 'Expand'}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${open ? ARROW.shut : ARROW.open}</svg></button>` +
-    (owner && !open ? '<i class="pvz" title="Drag to resize this card · double-click to reset"></i>' : '') + '</div>';
+    '</div>';
 };
 const boardCols = () => getComputedStyle($('board')).gridTemplateColumns.split(' ').length;
 // fit one card into the grid: how many columns it spans, and how many 10px rows its height needs
@@ -234,28 +234,6 @@ function toggleCard(id) {
     if (dx || dy || x.dataset.id === id) x.animate([{transform: from, transformOrigin: 'top left'}, {transform: 'none', transformOrigin: 'top left'}], {duration: 340, easing: 'cubic-bezier(.2,.7,.2,1)'});
   });
 }
-// owner only: drag a card's bottom-right corner to resize it (snaps to the grid, saved on the post); double-click the corner to reset
-let pvDrag = null;
-document.addEventListener('pointerdown', ev => {
-  const h = ev.target.closest('.pvz'); if (!h) return;
-  ev.preventDefault(); const bi = h.closest('.bi'), r = bi.getBoundingClientRect();
-  pvDrag = {bi, x: ev.clientX, y: ev.clientY, w: r.width, h: r.height}; bi.classList.add('sizing'); h.setPointerCapture(ev.pointerId);
-});
-document.addEventListener('pointermove', ev => {
-  if (!pvDrag) return;
-  const {bi, x, y, w, h} = pvDrag, cols = boardCols(); pvDrag.moved = true;
-  const colW = ($('board').clientWidth - (cols - 1) * GAP) / cols;
-  bi.dataset.c = Math.max(1, Math.min(cols, Math.round((w + ev.clientX - x + GAP) / (colW + GAP))));
-  bi.dataset.r = Math.max(5, Math.min(90, Math.round((h + ev.clientY - y) / ROW)));
-  layoutItem(bi, cols);
-});
-const pvEnd = () => {
-  if (!pvDrag) return;
-  const {bi, moved} = pvDrag, e = all.find(x => x.id === bi.dataset.id); bi.classList.remove('sizing'); pvDrag = null;
-  if (e && moved) put({...e, pvC: +bi.dataset.c, pvR: +bi.dataset.r});
-};
-document.addEventListener('pointerup', pvEnd); document.addEventListener('pointercancel', pvEnd);
-document.addEventListener('dblclick', ev => { const h = ev.target.closest('.pvz'); if (!h) return; const e = all.find(x => x.id === h.closest('.bi').dataset.id); if (e) put({...e, pvC: undefined, pvR: undefined}); });
 const bcard = p => {
   const parts = {title: ttl('blog', p), time: `<div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>`,
     desc: rich(p.html) || (p.body ? `<p>${esc(p.body)}</p>` : ''), photos: gal(p)};
@@ -430,8 +408,9 @@ function openModal(kind, old) {
   $('mh').textContent = (old && !wasDraft() ? 'Edit ' : 'New ') + (kind === 'b' ? 'post' : 'experience') + (wasDraft() ? ' · draft' : '');
   $('dl').textContent = kind === 'b' ? 'Body' : 'Description';
   $('pub').checked = old ? !!(old.draft ? old.wantPublic : old.is_public) : false;
-  $('pvs').hidden = kind === 'b'; const show = (old && old.pvShow) || PV_DEFAULT;   // blog posts aren't on the board
-  $('pvopts').innerHTML = PV_PARTS.map(([k, l]) => `<label class="chk"><input type="checkbox" value="${k}"${show.includes(k) ? ' checked' : ''}> ${l}</label>`).join('');
+  // the preview card's settings, edited in the "Edit preview card" panel (blog posts aren't on the board, so they don't get one)
+  draft.pv = {c: old && old.pvC, r: old && old.pvR, show: (old && old.pvShow) || PV_DEFAULT, order: (old && old.pvOrder) || null};
+  $('pvbtn').hidden = kind === 'b'; pvMode(false);
   $('sd').hidden = !!old && !wasDraft();   // no "Save draft" when editing a post that's already published
   btnReset(); $('err').textContent = '';
   drawDraft(); drawDrafts(); updExp(); $('modal').hidden = false; $('t').focus();
@@ -483,6 +462,63 @@ function edSet(x) {
 }
 // html = the editor's own HTML (Quill's getSemanticHTML() export turns spaces into &nbsp; and videos into plain links)
 const edGet = () => Q ? {text: Q.getText().trim(), html: Q.getLength() > 1 ? Q.root.innerHTML : ''} : {text: $('d').value.trim(), html: ''};
+/* --- EDIT PREVIEW CARD: a panel in the New/Edit window for how this experience looks as a card on the board.
+       Tick parts and drag ⠿ to order them (saved as pvShow / pvOrder); drag the card's corner to size it (pvC columns × pvR rows).
+       The card is drawn from what's in the form right now, at roughly the size it has on a computer screen. --- */
+const PV_COL = 116, PV_MAXC = 5;   // a board column's width on a computer, and the widest card that fits in this window
+const PV_LABEL = Object.fromEntries(PV_PARTS);
+const formOrder = () => [...$('secs').children].map(x => x.dataset.sec);
+function draftItem() {   // the post as currently typed into the form
+  const ok = d => isNaN(d) ? new Date() : d, s = ok(new Date($('s').value)), e = ok(new Date($('e').value)), {text, html} = edGet();
+  return {id: 'pv', title: $('t').value.trim() || 'Untitled', start: s.toISOString(), end: e.toISOString(), minutes: Math.max(0, Math.round((e - s) / 6e4)),
+    rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, desc: text, html, images: draft.imgs.map(im => im.url), imgH: draft.imgs.map(im => im.h || null)};
+}
+function pvMode(on) {
+  $('secs').hidden = on; $('pvbtn').hidden = on || draft.kind === 'b'; $('pvEd').hidden = !on;
+  if (on) { drawPv(); $('modal').scrollTop = 0; }
+}
+function drawPv() {
+  const show = draft.pv.show;
+  $('pvParts').innerHTML = (draft.pv.order || formOrder()).map(k => `<div class="pvrow" data-k="${k}"><span class="grip" title="Drag to move">⠿</span><label class="chk"><input type="checkbox" value="${k}"${show.includes(k) ? ' checked' : ''}> ${PV_LABEL[k]}</label></div>`).join('');
+  drawPvCard();
+}
+function drawPvCard() {
+  $('pvCard').innerHTML = card({...draftItem(), order: draft.pv.order || formOrder()}, draft.pv.show) + '<i class="pvh" title="Drag to resize"></i>';
+  sizePvCard();
+}
+function sizePvCard() {   // set the card's width/height from pvC/pvR (or automatic) without redrawing what's inside it
+  const {c = 2, r} = draft.pv, b = $('pvCard'), cd = b.querySelector('.card');
+  b.style.width = (c * PV_COL + (c - 1) * GAP) + 'px'; if (r) b.dataset.r = r; else delete b.dataset.r;   // data-r: same rule as the board (no 300px cap)
+  cd.style.height = r ? (r * ROW - GAP) + 'px' : '';
+  cd.classList.toggle('clip', cd.scrollHeight > cd.clientHeight + 2);
+  $('pvSize').textContent = `${c} column${c > 1 ? 's' : ''} wide · ${r ? (r * ROW - GAP) + 'px tall' : 'automatic height'}`;
+}
+$('pvParts').addEventListener('change', () => { draft.pv.show = [...$('pvParts').querySelectorAll('input:checked')].map(x => x.value); drawPvCard(); });
+// drag a part's ⠿ up or down to move it on the card
+let pvRow = null;
+$('pvParts').addEventListener('pointerdown', ev => { if (!ev.target.closest('.grip')) return; ev.preventDefault(); pvRow = ev.target.closest('.pvrow'); pvRow.classList.add('dragging'); $('pvParts').setPointerCapture(ev.pointerId); });
+$('pvParts').addEventListener('pointermove', ev => {
+  if (!pvRow) return;
+  const next = [...$('pvParts').children].find(x => x !== pvRow && ev.clientY < x.getBoundingClientRect().top + x.offsetHeight / 2) || null;
+  if (pvRow.nextElementSibling !== next) { $('pvParts').insertBefore(pvRow, next); draft.pv.order = [...$('pvParts').children].map(x => x.dataset.k); drawPvCard(); }
+});
+const pvRowEnd = () => { if (pvRow) pvRow.classList.remove('dragging'); pvRow = null; };
+$('pvParts').addEventListener('pointerup', pvRowEnd); $('pvParts').addEventListener('pointercancel', pvRowEnd);
+// drag the card's bottom-right corner to size it: snaps to whole columns and 10px steps
+let pvSz = null;
+$('pvCard').addEventListener('pointerdown', ev => {
+  if (!ev.target.closest('.pvh')) return;
+  ev.preventDefault(); pvSz = {x: ev.clientX, y: ev.clientY, w: $('pvCard').offsetWidth, h: $('pvCard').querySelector('.card').offsetHeight};
+  $('pvCard').classList.add('sizing'); $('pvCard').setPointerCapture(ev.pointerId);
+});
+$('pvCard').addEventListener('pointermove', ev => {
+  if (!pvSz) return;
+  draft.pv.c = Math.max(1, Math.min(PV_MAXC, Math.round((pvSz.w + ev.clientX - pvSz.x + GAP) / (PV_COL + GAP))));
+  draft.pv.r = Math.max(5, Math.min(90, Math.round((pvSz.h + ev.clientY - pvSz.y + GAP) / ROW)));
+  sizePvCard();
+});
+const pvSzEnd = () => { if (pvSz) $('pvCard').classList.remove('sizing'); pvSz = null; };
+$('pvCard').addEventListener('pointerup', pvSzEnd); $('pvCard').addEventListener('pointercancel', pvSzEnd);
 $('fi').addEventListener('change', async ev => {
   const files = [...ev.target.files];
   for (const f of files) {
@@ -509,7 +545,7 @@ async function save(asDraft) {
     : {is_public: pub, num: (draft.old && draft.old.num) || nextNum(b ? posts() : ents())};
   const o = b ? {kind: 'post', id, ...extra, title: t, body: d, html, images, imgH, order, created: draft.old && !wasDraft() ? draft.old.created : new Date().toISOString()}
     : {id, ...extra, title: t, desc: d, html, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order,
-      pvShow: [...$('pvopts').querySelectorAll('input:checked')].map(x => x.value), pvC: draft.old && draft.old.pvC, pvR: draft.old && draft.old.pvR};   // keep the card's size when editing
+      pvShow: draft.pv.show, pvOrder: draft.pv.order || undefined, pvC: draft.pv.c, pvR: draft.pv.r};   // the preview card's settings
   const ok = await put(o);
   if (!ok) return fail('Could not save. Are you still logged in?');
   const gone = draft.old ? (draft.old.images || []).filter(i => !images.includes(i)) : [];
@@ -536,6 +572,7 @@ async function copyLink(v) {
 
 /* --- CLICKS: one listener handles every button, based on its data-act label --- */
 document.addEventListener('click', ev => {
+  if (ev.target.closest('#pvCard')) return;   // the card in "Edit preview card" is look-only
   const b = ev.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act, v = b.dataset.v, k = b.dataset.k, tog = set => set.has(key(v)) ? set.delete(key(v)) : set.add(key(v));   // filters store tag names in lowercase
   if (a === 'go') { if (ev.metaKey || ev.ctrlKey) return; ev.preventDefault(); nav('/' + v); }   // Cmd/Ctrl-click still opens a new tab
@@ -544,6 +581,9 @@ document.addEventListener('click', ev => {
   else if (a === 'close') $('modal').hidden = true;
   else if (a === 'save') save();
   else if (a === 'expand') toggleCard(v);
+  else if (a === 'pvedit') pvMode(true);
+  else if (a === 'pvback') pvMode(false);
+  else if (a === 'pvauto') { draft.pv.c = draft.pv.r = undefined; sizePvCard(); }
   else if (a === 'savedraft') save(true);
   else if (a === 'loaddraft') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); $('drf').open = true; }
   else if (a === 'flt') { tog(sel[k]); render(); }

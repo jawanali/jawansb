@@ -745,7 +745,7 @@ textarea{
 .bi:not(.open):not([data-r]) > .card{max-height:300px}   /* cards you haven't sized yourself stop at 300px tall */
 .bi:not(.open) h4{font-size:15px}
 .bi:not(.open) .th{height:84px!important}
-.bi:not(.open) .rzh,.bi:not(.open) .rich iframe{display:none}
+.bi:not(.open) .rzh{display:none}
 .bi:not(.open) .rt{font-size:18px}
 .card.clip{-webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent);mask-image:linear-gradient(to bottom,#000 78%,transparent)}
 /* the expand / shrink arrow in each card's top-right corner */
@@ -754,13 +754,24 @@ textarea{
   background:rgba(0,0,0,.22);border:0;color:#fff;cursor:pointer;padding:0;opacity:.7   /* dark backing so it shows on any card color */
 }
 .xp:hover{opacity:1;background:rgba(0,0,0,.4)}
-/* owner only: the corner you drag to resize a card */
-.pvz{
-  position:absolute;right:2px;bottom:12px;width:12px;height:12px;cursor:nwse-resize;touch-action:none;
-  border-right:2px solid #fff;border-bottom:2px solid #fff;filter:drop-shadow(0 0 1px rgba(0,0,0,.8));opacity:.5
+
+/* ===== EDIT PREVIEW CARD (panel in the New/Edit window) ===== */
+.pvbtn{display:block;margin:14px 0 0;font-size:14px;color:var(--acc);text-decoration:none}
+.pvbtn:hover{text-decoration:underline}
+.pved > .link{font-size:14px;padding:0}
+.pved > .mute{margin:8px 0 10px}
+.pvparts{border:1px solid var(--line);padding:4px 10px}
+.pvrow{display:flex;align-items:center;gap:10px;padding:2px 0}
+.pvrow .chk{margin:0;font-size:14px}
+.pvrow .grip{cursor:grab;color:var(--mute);font-size:18px;line-height:1;touch-action:none;user-select:none}
+.pvrow .grip:hover{color:var(--ink)}
+.pvrow.dragging{background:var(--bg);outline:1px dashed var(--acc)}
+.pvstage{margin-top:14px;padding:14px;background:var(--bg);border:1px dashed var(--line);overflow-x:auto}   /* a patch of "board" for the card to sit on */
+.pvcard{position:relative;max-width:none}
+.pvh{
+  position:absolute;right:0;bottom:10px;width:16px;height:16px;cursor:nwse-resize;touch-action:none;
+  border-right:2px solid #fff;border-bottom:2px solid #fff;filter:drop-shadow(0 0 1px rgba(0,0,0,.8))
 }
-.bi:hover .pvz,.bi.sizing .pvz{opacity:1}
-.bi.sizing > .card{outline:1px dashed var(--acc)}
-/* "Preview card shows" checkboxes in the form */
-.pvopts{display:flex;flex-wrap:wrap;gap:4px 16px}
-.pvopts .chk{margin:0;font-size:13px}
+.pvcard.sizing > .card{outline:1px dashed var(--acc)}
+.pvfoot{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+.pvfoot .mute{font-size:12px}
