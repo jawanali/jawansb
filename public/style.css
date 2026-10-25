@@ -760,12 +760,14 @@ textarea{
 .pvbtn:hover{text-decoration:underline}
 .pved > .link{font-size:14px;padding:0}
 .pved > .mute{margin:8px 0 10px}
-.pvparts{border:1px solid var(--line);padding:4px 10px}
-.pvrow{display:flex;align-items:center;gap:10px;padding:2px 0}
-.pvrow .chk{margin:0;font-size:14px}
-.pvrow .grip{cursor:grab;color:var(--mute);font-size:18px;line-height:1;touch-action:none;user-select:none}
-.pvrow .grip:hover{color:var(--ink)}
-.pvrow.dragging{background:var(--bg);outline:1px dashed var(--acc)}
+.pvparts{display:flex;flex-wrap:wrap;gap:4px 16px;border:1px solid var(--line);padding:6px 10px}   /* show/hide checkboxes */
+.pvparts .chk{margin:0;font-size:14px}
+/* each part on the card in the panel, with a ⠿ handle in the card's right margin for dragging it up or down */
+.pp{position:relative}
+.pp:hover{outline:1px dashed var(--mute);outline-offset:2px}
+.pp.dragging{outline:1px dashed var(--acc);outline-offset:2px;opacity:.8}
+.ppg{position:absolute;top:0;right:-26px;font-size:16px;line-height:1.2;color:var(--mute);cursor:grab;touch-action:none;user-select:none}
+.ppg:hover{color:var(--ink)}
 .pvstage{margin-top:14px;padding:14px;background:var(--bg);border:1px dashed var(--line);overflow-x:auto}   /* a patch of "board" for the card to sit on */
 .pvcard{position:relative;max-width:none}
 .pvh{

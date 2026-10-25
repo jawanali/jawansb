@@ -170,7 +170,8 @@ const rich = h => {
   const d = document.createElement('div'); d.className = 'rich'; d.appendChild(f); return d.outerHTML;
 };
 // pv = drawing it as a small preview card on the board: only the parts listed in pv, and no Edit/Delete/Link buttons
-const card = (e, pv) => {
+// movable = in "Edit preview card": each part is wrapped with a ⠿ handle so you can drag it up or down on the card
+const card = (e, pv, movable) => {
   const s = new Date(e.start), en = new Date(e.end), tm = x => x.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
   const grp = (k, w) => tagsOf(e, k).length ? `<span class="grp"><em>${w}</em>${tagsOf(e, k).map(n => chip(k, n)).join('')}</span>` : '';
   const types = tagsOf(e, 'types').length ? `<div class="types">${tagsOf(e, 'types').map(n => chip('types', n)).join('')}</div>` : '';
@@ -185,7 +186,7 @@ const card = (e, pv) => {
     photos: gal(e)
   };
   const tn = tint(e);
-  return `<div class="card entry${tn ? ' tinted' : ''}" id="e-${e.id}"${tn ? ` style="${tn}"` : ''}>${orderOf(e).filter(k => !pv || pv.includes(k)).map(k => parts[k] || '').join('')}${pv ? '' : acts('exp', e)}</div>`;
+  return `<div class="card entry${tn ? ' tinted' : ''}" id="e-${e.id}"${tn ? ` style="${tn}"` : ''}>${orderOf(e).filter(k => (!pv || pv.includes(k)) && parts[k]).map(k => movable ? `<div class="pp" data-k="${k}"><span class="ppg" title="Drag to move">⠿</span>${parts[k]}</div>` : parts[k]).join('')}${pv ? '' : acts('exp', e)}</div>`;
 };
 /* --- THE BOARD (EXP page): the newest post shown in full on top, every other one as a preview card packed below like a bulletin board.
        The board is a grid of narrow columns and 10px rows. Each card spans some columns (pvC, default 2) and as many rows as it is tall
@@ -477,13 +478,13 @@ function pvMode(on) {
   $('secs').hidden = on; $('pvbtn').hidden = on || draft.kind === 'b'; $('pvEd').hidden = !on;
   if (on) { drawPv(); $('modal').scrollTop = 0; }
 }
-function drawPv() {
+function drawPv() {   // show/hide checkboxes, then the card
   const show = draft.pv.show;
-  $('pvParts').innerHTML = (draft.pv.order || formOrder()).map(k => `<div class="pvrow" data-k="${k}"><span class="grip" title="Drag to move">⠿</span><label class="chk"><input type="checkbox" value="${k}"${show.includes(k) ? ' checked' : ''}> ${PV_LABEL[k]}</label></div>`).join('');
+  $('pvParts').innerHTML = PV_PARTS.map(([k, l]) => `<label class="chk"><input type="checkbox" value="${k}"${show.includes(k) ? ' checked' : ''}> ${l}</label>`).join('');
   drawPvCard();
 }
 function drawPvCard() {
-  $('pvCard').innerHTML = card({...draftItem(), order: draft.pv.order || formOrder()}, draft.pv.show) + '<i class="pvh" title="Drag to resize"></i>';
+  $('pvCard').innerHTML = card({...draftItem(), order: draft.pv.order || formOrder()}, draft.pv.show, true) + '<i class="pvh" title="Drag to resize"></i>';
   sizePvCard();
 }
 function sizePvCard() {   // set the card's width/height from pvC/pvR (or automatic) without redrawing what's inside it
@@ -494,16 +495,26 @@ function sizePvCard() {   // set the card's width/height from pvC/pvR (or automa
   $('pvSize').textContent = `${c} column${c > 1 ? 's' : ''} wide · ${r ? (r * ROW - GAP) + 'px tall' : 'automatic height'}`;
 }
 $('pvParts').addEventListener('change', () => { draft.pv.show = [...$('pvParts').querySelectorAll('input:checked')].map(x => x.value); drawPvCard(); });
-// drag a part's ⠿ up or down to move it on the card
-let pvRow = null;
-$('pvParts').addEventListener('pointerdown', ev => { if (!ev.target.closest('.grip')) return; ev.preventDefault(); pvRow = ev.target.closest('.pvrow'); pvRow.classList.add('dragging'); $('pvParts').setPointerCapture(ev.pointerId); });
-$('pvParts').addEventListener('pointermove', ev => {
-  if (!pvRow) return;
-  const next = [...$('pvParts').children].find(x => x !== pvRow && ev.clientY < x.getBoundingClientRect().top + x.offsetHeight / 2) || null;
-  if (pvRow.nextElementSibling !== next) { $('pvParts').insertBefore(pvRow, next); draft.pv.order = [...$('pvParts').children].map(x => x.dataset.k); drawPvCard(); }
+// drag a part's ⠿ (on the card itself) up or down to move it. This only changes the card's order (pvOrder), never the full post's.
+let pvPart = null;
+$('pvCard').addEventListener('pointerdown', ev => {
+  if (!ev.target.closest('.ppg')) return;
+  ev.preventDefault(); pvPart = ev.target.closest('.pp'); pvPart.classList.add('dragging'); $('pvCard').setPointerCapture(ev.pointerId);
 });
-const pvRowEnd = () => { if (pvRow) pvRow.classList.remove('dragging'); pvRow = null; };
-$('pvParts').addEventListener('pointerup', pvRowEnd); $('pvParts').addEventListener('pointercancel', pvRowEnd);
+$('pvCard').addEventListener('pointermove', ev => {
+  if (!pvPart) return;
+  const box = pvPart.parentElement, next = [...box.querySelectorAll(':scope > .pp')].find(x => x !== pvPart && ev.clientY < x.getBoundingClientRect().top + x.offsetHeight / 2) || null;
+  if (pvPart.nextElementSibling !== next) box.insertBefore(pvPart, next);
+});
+const pvPartEnd = () => {
+  if (!pvPart) return;
+  pvPart.classList.remove('dragging'); pvPart = null;
+  // the parts you can see are in their new order; hidden ones keep their places in between
+  const seen = [...$('pvCard').querySelectorAll('.pp')].map(x => x.dataset.k), full = draft.pv.order || formOrder();
+  let i = 0; draft.pv.order = full.map(k => seen.includes(k) ? seen[i++] : k);
+  drawPvCard();
+};
+$('pvCard').addEventListener('pointerup', pvPartEnd); $('pvCard').addEventListener('pointercancel', pvPartEnd);
 // drag the card's bottom-right corner to size it: snaps to whole columns and 10px steps
 let pvSz = null;
 $('pvCard').addEventListener('pointerdown', ev => {
