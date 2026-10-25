@@ -169,7 +169,8 @@ const rich = h => {
   f.querySelectorAll('a[href]').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });   // links open in a new tab
   const d = document.createElement('div'); d.className = 'rich'; d.appendChild(f); return d.outerHTML;
 };
-const card = e => {
+// pv = drawing it as a small preview card on the board: only the parts listed in pv, and no Edit/Delete/Link buttons
+const card = (e, pv) => {
   const s = new Date(e.start), en = new Date(e.end), tm = x => x.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
   const grp = (k, w) => tagsOf(e, k).length ? `<span class="grp"><em>${w}</em>${tagsOf(e, k).map(n => chip(k, n)).join('')}</span>` : '';
   const types = tagsOf(e, 'types').length ? `<div class="types">${tagsOf(e, 'types').map(n => chip('types', n)).join('')}</div>` : '';
@@ -184,8 +185,77 @@ const card = e => {
     photos: gal(e)
   };
   const tn = tint(e);
-  return `<div class="card entry${tn ? ' tinted' : ''}" id="e-${e.id}"${tn ? ` style="${tn}"` : ''}>${orderOf(e).map(k => parts[k] || '').join('')}${acts('exp', e)}</div>`;
+  return `<div class="card entry${tn ? ' tinted' : ''}" id="e-${e.id}"${tn ? ` style="${tn}"` : ''}>${orderOf(e).filter(k => !pv || pv.includes(k)).map(k => parts[k] || '').join('')}${pv ? '' : acts('exp', e)}</div>`;
 };
+/* --- THE BOARD (EXP page): the newest post shown in full on top, every other one as a preview card packed below like a bulletin board.
+       The board is a grid of narrow columns and 10px rows. Each card spans some columns (pvC, default 2) and as many rows as it is tall
+       (pvR if you've sized it, otherwise its natural height, up to 300px). "dense" packing lets small cards fill gaps left by big ones.
+       ↗ on a card expands it to a full post right where it is; the grid repacks around it. ↙ shrinks it back. --- */
+const PV_PARTS = [['title', 'Title'], ['time', 'Date & EXP'], ['type', 'Type'], ['tags', 'People & location'], ['rating', 'Rating'], ['desc', 'Description'], ['photos', 'Photos']];
+const PV_DEFAULT = ['title', 'time', 'type', 'rating', 'desc', 'photos'];   // what a card shows until you choose
+const ROW = 10, GAP = 10, FULL_COLS = 6;   // grid row height, space between cards, columns an expanded card spans
+const opened = new Set();   // ids of the cards you've expanded
+const ARROW = {open: '<path d="M14 10l7-7M21 9V3h-6M10 14l-7 7M3 15v6h6"/>', shut: '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>'};
+const boardCard = e => {
+  const open = opened.has(e.id), show = e.pvShow || PV_DEFAULT;
+  const html = open ? card(e) : card(e, show);
+  return `<div class="bi${open ? ' open' : ''}" data-id="${e.id}" data-c="${open ? FULL_COLS : e.pvC || 2}"${!open && e.pvR ? ` data-r="${e.pvR}"` : ''}>${html}` +
+    `<button class="xp" data-act="expand" data-v="${e.id}" title="${open ? 'Shrink back to a card' : 'Open the full post here'}" aria-label="${open ? 'Shrink' : 'Expand'}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${open ? ARROW.shut : ARROW.open}</svg></button>` +
+    (owner && !open ? '<i class="pvz" title="Drag to resize this card · double-click to reset"></i>' : '') + '</div>';
+};
+const boardCols = () => getComputedStyle($('board')).gridTemplateColumns.split(' ').length;
+// fit one card into the grid: how many columns it spans, and how many 10px rows its height needs
+function layoutItem(bi, cols = boardCols()) {
+  const c = bi.querySelector('.card');
+  bi.style.gridColumn = `span ${Math.min(+bi.dataset.c || 2, cols)}`;
+  if (bi.dataset.r) c.style.height = (bi.dataset.r * ROW - GAP) + 'px'; else c.style.height = '';
+  bi.style.gridRow = `span ${bi.dataset.r || Math.ceil((c.offsetHeight + GAP) / ROW)}`;
+  c.classList.toggle('clip', !bi.classList.contains('open') && c.scrollHeight > c.clientHeight + 2);   // fade out text that doesn't fit
+}
+function layoutBoard() { const b = $('board'); if (!b) return; const cols = boardCols(); b.querySelectorAll('.bi').forEach(bi => layoutItem(bi, cols)); }
+// photos finishing loading or the window changing size: refit the cards
+const boardRO = new ResizeObserver(es => { if (!$('board')) return; if (es.some(x => x.target === $('board'))) layoutBoard(); else es.forEach(x => { const bi = x.target.closest('.bi'); if (bi) layoutItem(bi); }); });
+function drawBoard(list) {
+  boardRO.disconnect();
+  const [first, ...rest] = list;
+  $('journal').innerHTML = `<div class="feat">${card(first)}</div>` + (rest.length ? `<div class="board" id="board">${rest.map(boardCard).join('')}</div>` : '');
+  if (!rest.length) return;
+  layoutBoard(); boardRO.observe($('board')); $('board').querySelectorAll('.bi > .card').forEach(c => boardRO.observe(c));
+}
+// expand or shrink one card; every card glides from where it was to where it lands (the "FLIP" animation trick)
+function toggleCard(id) {
+  const was = new Map([...document.querySelectorAll('#board .bi')].map(x => [x.dataset.id, x.getBoundingClientRect()]));
+  opened.has(id) ? opened.delete(id) : opened.add(id);
+  render();
+  document.querySelectorAll('#board .bi').forEach(x => {
+    const a = was.get(x.dataset.id); if (!a) return;
+    const b = x.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top;
+    const from = `translate(${dx}px, ${dy}px)` + (x.dataset.id === id ? ` scale(${a.width / b.width}, ${a.height / b.height})` : '');
+    if (dx || dy || x.dataset.id === id) x.animate([{transform: from, transformOrigin: 'top left'}, {transform: 'none', transformOrigin: 'top left'}], {duration: 340, easing: 'cubic-bezier(.2,.7,.2,1)'});
+  });
+}
+// owner only: drag a card's bottom-right corner to resize it (snaps to the grid, saved on the post); double-click the corner to reset
+let pvDrag = null;
+document.addEventListener('pointerdown', ev => {
+  const h = ev.target.closest('.pvz'); if (!h) return;
+  ev.preventDefault(); const bi = h.closest('.bi'), r = bi.getBoundingClientRect();
+  pvDrag = {bi, x: ev.clientX, y: ev.clientY, w: r.width, h: r.height}; bi.classList.add('sizing'); h.setPointerCapture(ev.pointerId);
+});
+document.addEventListener('pointermove', ev => {
+  if (!pvDrag) return;
+  const {bi, x, y, w, h} = pvDrag, cols = boardCols(); pvDrag.moved = true;
+  const colW = ($('board').clientWidth - (cols - 1) * GAP) / cols;
+  bi.dataset.c = Math.max(1, Math.min(cols, Math.round((w + ev.clientX - x + GAP) / (colW + GAP))));
+  bi.dataset.r = Math.max(5, Math.min(90, Math.round((h + ev.clientY - y) / ROW)));
+  layoutItem(bi, cols);
+});
+const pvEnd = () => {
+  if (!pvDrag) return;
+  const {bi, moved} = pvDrag, e = all.find(x => x.id === bi.dataset.id); bi.classList.remove('sizing'); pvDrag = null;
+  if (e && moved) put({...e, pvC: +bi.dataset.c, pvR: +bi.dataset.r});
+};
+document.addEventListener('pointerup', pvEnd); document.addEventListener('pointercancel', pvEnd);
+document.addEventListener('dblclick', ev => { const h = ev.target.closest('.pvz'); if (!h) return; const e = all.find(x => x.id === h.closest('.bi').dataset.id); if (e) put({...e, pvC: undefined, pvR: undefined}); });
 const bcard = p => {
   const parts = {title: ttl('blog', p), time: `<div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>`,
     desc: rich(p.html) || (p.body ? `<p>${esc(p.body)}</p>` : ''), photos: gal(p)};
@@ -203,6 +273,7 @@ function render() {
   // top cards show the filtered numbers while a filter is on
   $('totExp').textContent = sh.exp.toLocaleString(); $('totQ').textContent = sh.n ? sh.qol.toFixed(2) : '—'; $('totN').textContent = sh.n;
   $('lblExp').textContent = filtered ? 'FILTERED EXP' : 'TOTAL EXP'; $('lblQ').textContent = filtered ? 'FILTERED QoL' : 'QUALITY OF LIFE'; $('lblN').textContent = filtered ? 'MATCHING' : 'EXPERIENCES';
+  $('side').hidden = page !== 'exp';   // stats and filters only on the EXP page
   $('statsBox').classList.toggle('hot', filtered);
   $('fcount').textContent = filtered ? ' · ' + KINDS.reduce((n, [k]) => n + sel[k].size, 0) + ' active' : '';
   // filter buttons, colored like their tags, with each tag's own EXP and QoL
@@ -225,7 +296,9 @@ function render() {
   };
   const back = w => focus ? `<p class="mute">Viewing one ${w} · <button class="link" data-act="unfocus">Show all</button></p>` : '';
   const none = (w, empty) => !focus ? empty : loaded ? `<p class="mute">Couldn't find that ${w}. It may be private or deleted.</p>` : '<p class="mute">Loading…</p>';
-  $('journal').innerHTML = (page === 'exp' ? back('experience') : '') + (one('exp', f).map(card).join('') || none('experience', `<p class="mute">Nothing here yet.${owner ? ' Tap “+ Log” to record an experience.' : ''}</p>`));
+  const shown = one('exp', f);
+  if (page === 'exp' && shown.length && !focus) drawBoard(shown);
+  else $('journal').innerHTML = (page === 'exp' ? back('experience') : '') + (shown.length ? `<div class="feat">${card(shown[0])}</div>` : none('experience', `<p class="mute">Nothing here yet.${owner ? ' Tap “+ Log” to record an experience.' : ''}</p>`));
   const P = posts().sort((a, b) => b.created.localeCompare(a.created));
   $('blog').innerHTML = (page === 'blog' ? back('post') : '') + (one('blog', P).map(bcard).join('') || none('post', `<p class="mute">No posts yet.${owner ? ' Tap “+ Blog” to write one.' : ''}</p>`));
   if (page === 'set') renderSet();
@@ -357,6 +430,8 @@ function openModal(kind, old) {
   $('mh').textContent = (old && !wasDraft() ? 'Edit ' : 'New ') + (kind === 'b' ? 'post' : 'experience') + (wasDraft() ? ' · draft' : '');
   $('dl').textContent = kind === 'b' ? 'Body' : 'Description';
   $('pub').checked = old ? !!(old.draft ? old.wantPublic : old.is_public) : false;
+  $('pvs').hidden = kind === 'b'; const show = (old && old.pvShow) || PV_DEFAULT;   // blog posts aren't on the board
+  $('pvopts').innerHTML = PV_PARTS.map(([k, l]) => `<label class="chk"><input type="checkbox" value="${k}"${show.includes(k) ? ' checked' : ''}> ${l}</label>`).join('');
   $('sd').hidden = !!old && !wasDraft();   // no "Save draft" when editing a post that's already published
   btnReset(); $('err').textContent = '';
   drawDraft(); drawDrafts(); updExp(); $('modal').hidden = false; $('t').focus();
@@ -433,7 +508,8 @@ async function save(asDraft) {
   const extra = asDraft ? {draft: true, is_public: false, wantPublic: pub, saved: new Date().toISOString()}
     : {is_public: pub, num: (draft.old && draft.old.num) || nextNum(b ? posts() : ents())};
   const o = b ? {kind: 'post', id, ...extra, title: t, body: d, html, images, imgH, order, created: draft.old && !wasDraft() ? draft.old.created : new Date().toISOString()}
-    : {id, ...extra, title: t, desc: d, html, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order};
+    : {id, ...extra, title: t, desc: d, html, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order,
+      pvShow: [...$('pvopts').querySelectorAll('input:checked')].map(x => x.value), pvC: draft.old && draft.old.pvC, pvR: draft.old && draft.old.pvR};   // keep the card's size when editing
   const ok = await put(o);
   if (!ok) return fail('Could not save. Are you still logged in?');
   const gone = draft.old ? (draft.old.images || []).filter(i => !images.includes(i)) : [];
@@ -467,6 +543,7 @@ document.addEventListener('click', ev => {
   else if (a === 'open') openModal(page === 'blog' ? 'b' : 'e');
   else if (a === 'close') $('modal').hidden = true;
   else if (a === 'save') save();
+  else if (a === 'expand') toggleCard(v);
   else if (a === 'savedraft') save(true);
   else if (a === 'loaddraft') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); $('drf').open = true; }
   else if (a === 'flt') { tog(sel[k]); render(); }
