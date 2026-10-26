@@ -60,7 +60,7 @@ body{
 .rail .stats{
   grid-template-columns:1fr
 }
-#pgBlog,#pgSet{
+#pgSet{
   max-width:720px;margin:0 auto        /* the blog and settings stay a single centered column */
 }
 @media (max-width:720px){
@@ -733,7 +733,7 @@ textarea{
 /* ===== THE BOARD (EXP page) — see "THE BOARD" in app.js ===== */
 #journal{overflow-anchor:none}   /* the page's own steadying (in toggleCard) handles scrolling; don't let Chrome also try */
 .rail .stats{margin-top:0}
-.feat{max-width:720px;margin:0 auto 22px}   /* the newest post, full size, centered on its own row */
+.feat{margin:0}   /* the newest post, full size (its column is set by .hero) */
 .feat .entry{margin-bottom:0}
 .board{
   display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));
@@ -801,3 +801,25 @@ textarea{
 .pvpics img{height:44px;width:auto;cursor:pointer;opacity:.6;outline:2px solid transparent}
 .pvpics img.on{opacity:1;outline-color:var(--acc)}
 .pvpics img:hover{opacity:1}
+
+/* ===== TOP OF EXP / BLOG: the newest post centered, with the heading and intro centered in the space to its left.
+   When that space gets too narrow (smaller laptop screens and phones), the heading and intro sit above the post instead. ===== */
+.hero{display:grid;grid-template-columns:1fr minmax(0,720px) 1fr;column-gap:28px;align-items:start;margin-bottom:22px}
+.lead{grid-column:1;justify-self:center;width:100%;max-width:240px}
+.featc{grid-column:2;min-width:0}
+.leadhead{position:relative;text-align:center}
+.leadhead .fh{margin:2px 0 8px}
+.introx{   /* the ✕ / ⌄ in the top-right corner of the intro: just an icon, no background */
+  position:absolute;top:0;right:0;background:none;border:0;padding:2px;color:var(--mute);cursor:pointer;display:flex;opacity:.7
+}
+.introx:hover{opacity:1;color:var(--ink)}
+.intro p{margin:0;font-size:13px;line-height:1.55;color:var(--mute)}
+.intro a{color:inherit}
+@media (max-width:1399px){
+  .hero{grid-template-columns:minmax(0,720px);justify-content:center}
+  .lead{grid-column:1;max-width:720px;margin-bottom:14px}
+  .leadhead{text-align:left}
+  .featc{grid-column:1}
+}
+/* the Blog page's sort control in the right column */
+.bside{margin-top:6px}

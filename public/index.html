@@ -56,13 +56,26 @@
       <div class="fsb"><input id="tq" class="tq" placeholder="Search tags…" autocomplete="off"><div id="tags"></div></div>
     </details>
   </aside>
+  <!-- the Blog page's sort control (the EXP page has its own inside Filter & sort) -->
+  <div class="bside" id="bside" hidden></div>
  </div>
  <div class="stage">
-  <main id="pgExp">
-   <h2 class="fh">Experiences</h2>
+  <!-- EXP and Blog share this: heading + intro to the left of the newest post, then the board of preview cards -->
+  <main id="pgList">
+   <div class="hero">
+    <div class="lead">
+     <div class="leadhead">
+      <h2 class="fh" id="pgTitle">Experiences</h2>
+      <button class="introx" id="introx" data-act="intro" aria-label="Hide the intro" title="Hide"></button>
+     </div>
+     <div class="intro" id="intro">
+      <p>hello. I am Jawan. I am an insane man. This is my personal Blog website. I'm currently attempting to kick myself off of all mainstream social media sites and isolate myself in my own corner of the net. I know nothing of computers, and instead I relied exclusively upon Claude to hack this together. So there are probably extensive vulnerabilities all over this thing, all of which you can probably use to dox me and infiltrate my family. I kindly ask that you do not, and that if you have any burning questions, or any desire to hurt my feelings, that you forward them to my email: <a href="mailto:jawanali@gmail.com">jawanali@gmail.com</a></p>
+     </div>
+    </div>
+    <div class="featc" id="feat"></div>
+   </div>
    <div id="journal"></div>
   </main>
-  <main id="pgBlog" hidden><h2>Blog</h2><div id="blog"></div></main>
   <main id="pgSet" hidden></main>
  </div>
 </div>

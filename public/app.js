@@ -182,6 +182,9 @@ const rich = (h, e) => {   // e = the post, so photos placed in the text can be 
   });
   const d = document.createElement('div'); d.className = 'rich'; d.appendChild(f); return d.outerHTML;
 };
+// put a card's parts together in its order: on a preview card only the parts in pv; in "Edit preview card" (movable) each part gets a ⠿ handle
+const assemble = (e, parts, pv, movable) => orderOf(e).filter(k => (!pv || pv.includes(k)) && parts[k])
+  .map(k => movable ? `<div class="pp" data-k="${k}"><span class="ppg" title="Drag to move">⠿</span>${parts[k]}</div>` : parts[k]).join('');
 // pv = drawing it as a small preview card on the board: only the parts listed in pv, and no Edit/Delete/Link buttons
 // movable = in "Edit preview card": each part is wrapped with a ⠿ handle so you can drag it up or down on the card
 const card = (e, pv, movable) => {
@@ -199,7 +202,7 @@ const card = (e, pv, movable) => {
     photos: pv ? pvPic(e) : gal(e)
   };
   const tn = tint(e);
-  return `<div class="card entry${tn ? ' tinted' : ''}" id="e-${e.id}"${tn ? ` style="${tn}"` : ''}>${orderOf(e).filter(k => (!pv || pv.includes(k)) && parts[k]).map(k => movable ? `<div class="pp" data-k="${k}"><span class="ppg" title="Drag to move">⠿</span>${parts[k]}</div>` : parts[k]).join('')}${pv ? '' : acts('exp', e)}</div>`;
+  return `<div class="card entry${tn ? ' tinted' : ''}" id="e-${e.id}"${tn ? ` style="${tn}"` : ''}>${assemble(e, parts, pv, movable)}${pv ? '' : acts('exp', e)}</div>`;
 };
 /* --- THE BOARD (EXP page): the newest post shown in full on top, every other one as a preview card packed below like a bulletin board.
        The board is a grid of narrow columns and 10px rows. Each card spans some columns (pvC, default 2) and as many rows as it is tall
@@ -212,7 +215,7 @@ const opened = new Set();   // ids of the cards you've expanded
 const ARROW = {open: '<path d="M14 10l7-7M21 9V3h-6M10 14l-7 7M3 15v6h6"/>', shut: '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>'};
 const boardCard = e => {
   const open = opened.has(e.id), show = e.pvShow || PV_DEFAULT;
-  const html = open ? card(e) : card({...e, order: e.pvOrder || orderOf(e)}, show);   // pvOrder = the card's own order of parts, if you've set one
+  const cf = cardFor(e), html = open ? cf(e) : cf({...e, order: e.pvOrder || orderOf(e)}, show);   // pvOrder = the card's own order of parts, if you've set one
   return `<div class="bi${open ? ' open' : ''}" data-id="${e.id}" data-c="${open ? FULL_COLS : e.pvC || 2}"${!open && e.pvR ? ` data-r="${e.pvR}"` : ''} style="--pvh:${e.pvImgH || 120}px">${html}` +   // --pvh: the card's photo height
     (open ? '' : `<button class="bix" data-act="expand" data-v="${e.id}" tabindex="-1" aria-hidden="true"></button>`) +   // clicking anywhere on a card opens it (even on a video)
     `<button class="xp" data-act="expand" data-v="${e.id}" title="${open ? 'Shrink back to a card' : 'Open the full post here'}" aria-label="${open ? 'Shrink' : 'Expand'}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${open ? ARROW.shut : ARROW.open}</svg></button>` +
@@ -230,10 +233,19 @@ function layoutItem(bi, cols = boardCols()) {
 function layoutBoard() { const b = $('board'); if (!b) return; const cols = boardCols(); b.querySelectorAll('.bi').forEach(bi => layoutItem(bi, cols)); }
 // photos finishing loading or the window changing size: refit the cards
 const boardRO = new ResizeObserver(es => { if (!$('board')) return; if (es.some(x => x.target === $('board'))) layoutBoard(); else es.forEach(x => { const bi = x.target.closest('.bi'); if (bi) layoutItem(bi); }); });
+/* --- THE INTRO next to the newest post. ✕ folds it away and turns into ⌄ to bring it back; your browser remembers which. --- */
+const ICON_X = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const ICON_DOWN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+let introHidden = false; try { introHidden = localStorage.getItem('introHidden') === '1'; } catch (x) {}
+function drawIntro() {
+  $('intro').hidden = introHidden; $('introx').innerHTML = introHidden ? ICON_DOWN : ICON_X;
+  $('introx').title = introHidden ? 'Show the intro' : 'Hide'; $('introx').setAttribute('aria-label', introHidden ? 'Show the intro' : 'Hide the intro');
+}
 function drawBoard(list) {
   boardRO.disconnect(); $('journal').style.paddingBottom = '';
   const [first, ...rest] = list;
-  $('journal').innerHTML = `<div class="feat">${card(first)}</div>` + (rest.length ? `<div class="board" id="board">${rest.map(boardCard).join('')}</div>` : '');
+  $('feat').innerHTML = `<div class="feat">${cardFor(first)(first)}</div>`;
+  $('journal').innerHTML = rest.length ? `<div class="board" id="board">${rest.map(boardCard).join('')}</div>` : '';
   if (!rest.length) return;
   layoutBoard(); boardRO.observe($('board')); $('board').querySelectorAll('.bi > .card').forEach(c => boardRO.observe(c));
 }
@@ -267,18 +279,21 @@ function toggleCard(id) {
   if (opened.has(id)) { roomBelow(top - FOCUS_TOP); window.scrollTo({top: Math.max(0, top - FOCUS_TOP), behavior: 'smooth'}); }
   else if (r.top < FOCUS_TOP || r.bottom > innerHeight - 20) window.scrollTo({top: Math.max(0, top - Math.max(FOCUS_TOP, (innerHeight - r.height) / 2)), behavior: 'smooth'});
 }
-const bcard = p => {
+// a blog post: title, date, body, photos. pv / movable work the same as for experiences
+const bcard = (p, pv, movable) => {
   const parts = {title: ttl('blog', p), time: `<div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>`,
-    desc: rich(p.html, p) || (p.body ? `<p>${esc(p.body)}</p>` : ''), photos: gal(p)};
-  return `<div class="card entry" id="b-${p.id}">${orderOf(p).map(k => parts[k] || '').join('')}${acts('blog', p)}</div>`;
+    desc: rich(p.html, p) || (p.body ? `<p>${esc(p.body)}</p>` : ''), photos: pv ? pvPic(p) : gal(p)};
+  return `<div class="card entry" id="b-${p.id}">${assemble(p, parts, pv, movable)}${pv ? '' : acts('blog', p)}</div>`;
 };
+const cardFor = x => x.kind === 'post' ? bcard : card;   // the right card drawing for an experience or a blog post
 
 function render() {
   const E = ents(), filtered = KINDS.some(([k]) => sel[k].size);
   const f = E.filter(e => KINDS.every(([k]) => !sel[k].size || tagsOf(e, k).some(t => sel[k].has(key(t))))).sort(cmp), sh = agg(f);
   // page switching + theme
   document.documentElement.dataset.page = page === 'blog' ? 'blog' : 'exp';
-  $('pgExp').hidden = page !== 'exp'; $('pgBlog').hidden = page !== 'blog'; $('pgSet').hidden = page !== 'set';
+  $('pgList').hidden = page === 'set'; $('pgSet').hidden = page !== 'set'; $('pgTitle').textContent = page === 'blog' ? 'Blog' : 'Experiences';
+  drawIntro();
   $('fab').hidden = page === 'set' || !owner; $('gear').hidden = !owner; $('status').hidden = !owner; $('status').textContent = 'Owner mode'; $('lock').textContent = owner ? 'Log out' : 'Owner login'; $('fab').textContent = page === 'blog' ? '+ Blog' : '+ Log';
   $('nvE').classList.toggle('cur', page !== 'blog'); $('nvB').classList.toggle('cur', page === 'blog');
   // top cards show the filtered numbers while a filter is on
@@ -307,11 +322,19 @@ function render() {
   };
   const back = w => focus ? `<p class="mute">Viewing one ${w} · <button class="link" data-act="unfocus">Show all</button></p>` : '';
   const none = (w, empty) => !focus ? empty : loaded ? `<p class="mute">Couldn't find that ${w}. It may be private or deleted.</p>` : '<p class="mute">Loading…</p>';
-  const shown = one('exp', f);
-  if (page === 'exp' && shown.length && !focus) drawBoard(shown);
-  else $('journal').innerHTML = (page === 'exp' ? back('experience') : '') + (shown.length ? `<div class="feat">${card(shown[0])}</div>` : none('experience', `<p class="mute">Nothing here yet.${owner ? ' Tap “+ Log” to record an experience.' : ''}</p>`));
-  const P = posts().sort((a, b) => b.created.localeCompare(a.created));
-  $('blog').innerHTML = (page === 'blog' ? back('post') : '') + (one('blog', P).map(bcard).join('') || none('post', `<p class="mute">No posts yet.${owner ? ' Tap “+ Blog” to write one.' : ''}</p>`));
+  // the Blog page: newest first (or oldest, with its Sort control), no filters
+  const P = posts().sort((a, b) => (sortDir === 'asc' ? 1 : -1) * a.created.localeCompare(b.created));
+  $('bside').hidden = page !== 'blog';
+  $('bside').innerHTML = `<h3>SORT BY</h3><div class="tl srt"><button class="tag on">Date</button>${dirBtn()}</div>`;
+  if (page !== 'set') {
+    const blog = page === 'blog', shown = blog ? one('blog', P) : one('exp', f), w = blog ? 'post' : 'experience';
+    if (shown.length && !focus) drawBoard(shown);
+    else {
+      boardRO.disconnect(); $('journal').innerHTML = '';
+      $('feat').innerHTML = back(w) + (shown.length ? `<div class="feat">${cardFor(shown[0])(shown[0])}</div>`
+        : none(w, `<p class="mute">${blog ? 'No posts yet.' : 'Nothing here yet.'}${owner ? (blog ? ' Tap “+ Blog” to write one.' : ' Tap “+ Log” to record an experience.') : ''}</p>`));
+    }
+  }
   if (page === 'set') renderSet();
 }
 /* --- FILTER MENU: slides open and shut instead of snapping. The search box hides tags that don't match what you type. --- */
@@ -477,7 +500,7 @@ function openModal(kind, old) {
   $('pub').checked = old ? !!(old.draft ? old.wantPublic : old.is_public) : false;
   // the preview card's settings, edited in the "Edit preview card" panel (blog posts aren't on the board, so they don't get one)
   draft.pv = {c: old && old.pvC, r: old && old.pvR, show: (old && old.pvShow) || PV_DEFAULT, order: (old && old.pvOrder) || null, img: old && old.pvImg, imgH: old && old.pvImgH};
-  $('pvbtn').hidden = kind === 'b'; pvMode(false);
+  pvMode(false);
   $('sd').hidden = !!old && !wasDraft();   // no "Save draft" when editing a post that's already published
   btnReset(); $('err').textContent = '';
   drawDraft(); drawDrafts(); updExp(); $('modal').hidden = false; $('t').focus();
@@ -548,22 +571,26 @@ const PV_LABEL = Object.fromEntries(PV_PARTS);
 const formOrder = () => [...$('secs').children].map(x => x.dataset.sec);
 function draftItem() {   // the post as currently typed into the form
   const ok = d => isNaN(d) ? new Date() : d, s = ok(new Date($('s').value)), e = ok(new Date($('e').value)), {text, html} = edGet();
+  const pics = draft.imgs.map(im => ({key: im.key, src: im.url, h: im.h}));
+  if (draft.kind === 'b') return {id: 'pv', kind: 'post', title: $('t').value.trim() || 'Untitled', created: (draft.old && draft.old.created) || new Date().toISOString(), body: text, html, pics, pvImg: draft.pv.img, pvImgH: draft.pv.imgH};
   return {id: 'pv', title: $('t').value.trim() || 'Untitled', start: s.toISOString(), end: e.toISOString(), minutes: Math.max(0, Math.round((e - s) / 6e4)),
     rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, desc: text, html, pics: draft.imgs.map(im => ({key: im.key, src: im.url, h: im.h})), pvImg: draft.pv.img, pvImgH: draft.pv.imgH};
 }
 function pvMode(on) {
-  $('secs').hidden = on; $('pvbtn').hidden = on || draft.kind === 'b'; $('pvEd').hidden = !on;
+  $('secs').hidden = on; $('pvbtn').hidden = on; $('pvEd').hidden = !on;
   if (on) { drawPv(); $('modal').scrollTop = 0; }
 }
 function drawPv() {   // show/hide checkboxes, then the card
   const show = draft.pv.show;
-  $('pvParts').innerHTML = PV_PARTS.map(([k, l]) => `<label class="chk"><input type="checkbox" value="${k}"${show.includes(k) ? ' checked' : ''}> ${l}</label>`).join('');
+  const list = draft.kind === 'b' ? [['title', 'Title'], ['time', 'Date'], ['desc', 'Body'], ['photos', 'Photos']] : PV_PARTS;   // blog posts have fewer parts
+  $('pvParts').innerHTML = list.map(([k, l]) => `<label class="chk"><input type="checkbox" value="${k}"${show.includes(k) ? ' checked' : ''}> ${l}</label>`).join('');
   const pick = (draft.imgs.find(im => im.key === draft.pv.img) || draft.imgs[0] || {}).key;   // the card's photo: your pick, or the first
   $('pvPics').innerHTML = draft.imgs.length ? '<span class="mute">Photo on the card:</span>' + draft.imgs.map(im => `<img src="${esc(im.url)}" alt="" data-k="${esc(im.key)}" class="${im.key === pick ? 'on' : ''}" title="Show this photo on the card">`).join('') : '';
   drawPvCard();
 }
 function drawPvCard() {
-  $('pvCard').innerHTML = card({...draftItem(), order: draft.pv.order || formOrder()}, draft.pv.show, true) + '<i class="pvh" title="Drag to resize"></i>';
+  const it = draftItem();
+  $('pvCard').innerHTML = cardFor(it)({...it, order: draft.pv.order || formOrder()}, draft.pv.show, true) + '<i class="pvh" title="Drag to resize"></i>';
   sizePvCard();
 }
 function sizePvCard() {   // set the card's width/height from pvC/pvR (or automatic) without redrawing what's inside it
@@ -642,7 +669,8 @@ async function save(asDraft) {
   // a draft is always private (it remembers your Public choice for later) and has no number; publishing gives it the next number
   const extra = asDraft ? {draft: true, is_public: false, wantPublic: pub, saved: new Date().toISOString()}
     : {is_public: pub, num: (draft.old && draft.old.num) || nextNum(b ? posts() : ents())};
-  const o = b ? {kind: 'post', id, ...extra, title: t, body: d, html, images, imgH, order, created: draft.old && !wasDraft() ? draft.old.created : new Date().toISOString()}
+  const o = b ? {kind: 'post', id, ...extra, title: t, body: d, html, images, imgH, order, created: draft.old && !wasDraft() ? draft.old.created : new Date().toISOString(),
+      pvShow: draft.pv.show, pvOrder: draft.pv.order || undefined, pvC: draft.pv.c, pvR: draft.pv.r, pvImg: draft.pv.img, pvImgH: draft.pv.imgH}
     : {id, ...extra, title: t, desc: d, html, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order,
       pvShow: draft.pv.show, pvOrder: draft.pv.order || undefined, pvC: draft.pv.c, pvR: draft.pv.r, pvImg: draft.pv.img, pvImgH: draft.pv.imgH};   // the preview card's settings
   const ok = await put(o);
@@ -695,6 +723,7 @@ document.addEventListener('click', ev => {
   else if (a === 'rmI') { removePic(draft.imgs[+v].key); draft.imgs.splice(+v, 1); drawDraft(); }   // also takes it out of the text
   else if (a === 'pin') pinToggle(+v);
   else if (a === 'sortBy') { sortBy = v; render(); }
+  else if (a === 'intro') { introHidden = !introHidden; try { localStorage.setItem('introHidden', introHidden ? '1' : '0'); } catch (x) {} drawIntro(); }
   else if (a === 'sortDir') { sortDir = sortDir === 'desc' ? 'asc' : 'desc'; render(); }
   else if (a === 'edit') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); }
   else if (a === 'link') copyLink(v);
