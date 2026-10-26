@@ -292,10 +292,12 @@ function render() {
   const f = E.filter(e => KINDS.every(([k]) => !sel[k].size || tagsOf(e, k).some(t => sel[k].has(key(t))))).sort(cmp), sh = agg(f);
   // page switching + theme
   document.documentElement.dataset.page = page === 'blog' ? 'blog' : 'exp';
-  $('pgList').hidden = page === 'set'; $('pgSet').hidden = page !== 'set'; $('pgTitle').textContent = page === 'blog' ? 'Blog' : 'Experiences';
+  const list = page === 'exp' || page === 'blog';   // the two pages with a board
+  $('pgList').hidden = !list; $('pgSet').hidden = page !== 'set'; $('pgPort').hidden = page !== 'port';
+  $('pgTitle').textContent = page === 'blog' ? 'Blog' : page === 'port' ? 'Portfolio' : 'Experiences';
   drawIntro();
-  $('fab').hidden = page === 'set' || !owner; $('gear').hidden = !owner; $('status').hidden = !owner; $('status').textContent = 'Owner mode'; $('lock').textContent = owner ? 'Log out' : 'Owner login'; $('fab').textContent = page === 'blog' ? '+ Blog' : '+ Log';
-  $('nvE').classList.toggle('cur', page !== 'blog'); $('nvB').classList.toggle('cur', page === 'blog');
+  $('fab').hidden = !list || !owner; $('gear').hidden = !owner; $('status').hidden = !owner; $('status').textContent = 'Owner mode'; $('lock').textContent = owner ? 'Log out' : 'Owner login'; $('fab').textContent = page === 'blog' ? '+ Blog' : '+ Log';
+  $('nvP').classList.toggle('cur', page === 'port'); $('nvE').classList.toggle('cur', page === 'exp' || page === 'set'); $('nvB').classList.toggle('cur', page === 'blog');
   // top cards show the filtered numbers while a filter is on
   $('totExp').textContent = sh.exp.toLocaleString(); $('totQ').textContent = sh.n ? sh.qol.toFixed(2) : '—'; $('totN').textContent = sh.n;
   $('lblExp').textContent = filtered ? 'FILTERED EXP' : 'TOTAL EXP'; $('lblQ').textContent = filtered ? 'FILTERED QoL' : 'QUALITY OF LIFE'; $('lblN').textContent = filtered ? 'MATCHING' : 'EXPERIENCES';
@@ -326,7 +328,7 @@ function render() {
   const P = posts().sort((a, b) => (sortDir === 'asc' ? 1 : -1) * a.created.localeCompare(b.created));
   $('bside').hidden = page !== 'blog';
   $('bside').innerHTML = `<h3>SORT BY</h3><div class="tl srt"><button class="tag on">Date</button>${dirBtn()}</div>`;
-  if (page !== 'set') {
+  if (list) {
     const blog = page === 'blog', shown = blog ? one('blog', P) : one('exp', f), w = blog ? 'post' : 'experience';
     if (shown.length && !focus) drawBoard(shown);
     else {
@@ -681,11 +683,11 @@ async function save(asDraft) {
   $('modal').hidden = true;
 }
 
-/* --- ADDRESSES: /exp and /blog are the two pages, /exp/3 or /blog/3 opens item number 3, /settings is tag colors.
+/* --- ADDRESSES: /exp, /blog and /portfolio are the pages, /exp/3 or /blog/3 opens item number 3, /settings is tag colors.
        Old links like /#e-ID or /#b-ID still work. route() reads the address bar; nav() changes it without reloading. --- */
 function route() {
   const [p, n] = location.pathname.split('/').filter(Boolean), h = location.hash.slice(1);
-  page = p === 'blog' ? 'blog' : p === 'settings' ? 'set' : 'exp'; focus = n || null;
+  page = p === 'blog' ? 'blog' : p === 'portfolio' ? 'port' : p === 'settings' ? 'set' : 'exp'; focus = n || null;
   if (/^[eb]-/.test(h)) { page = h[0] === 'b' ? 'blog' : 'exp'; focus = h.slice(2); }
   else if (!p) history.replaceState(null, '', '/exp');
   render();

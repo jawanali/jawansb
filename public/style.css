@@ -45,65 +45,83 @@ body{
 
 /*i don't know what any of this shit means */
 
-/* ===== PAGE LAYOUT: posts on the left (.stage), a column on the right (.rail) with the tabs, login/settings, stats and filters.
-   On phones (narrower than 720px) the column sits on top instead. ===== */
+/* ===== PAGE LAYOUT
+   Tabs across the top (.topnav). Posts in the middle (.stage); stats, filters and sorting in a column on the right (.rail).
+   On wide windows (1500px and up) the heading + intro get their own column on the far left (.lead), outside the posts' space;
+   narrower than that, the intro is hidden. On phones (under 720px) the right column moves above the posts. ===== */
 .wrap{
-  max-width:1440px;margin:0 auto;padding:20px 16px 110px;
-  display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:0 32px;align-items:start
+  max-width:1440px;margin:0 auto;padding:16px 16px 110px;
+  display:grid;grid-template-columns:minmax(0,1fr) 250px;grid-template-areas:"nav nav" "stage rail";gap:0 32px;align-items:start
 }
-.stage{
-  grid-column:1;grid-row:1;min-width:0
-}
+.topnav{grid-area:nav}
+.stage{grid-area:stage;min-width:0}
 .rail{
-  grid-column:2;grid-row:1;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow-y:auto;scrollbar-width:thin
+  grid-area:rail;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow-y:auto;scrollbar-width:thin
 }
 .rail .stats{
   grid-template-columns:1fr
 }
+.lead{display:none}
+@media (min-width:1500px){
+  .wrap{max-width:1760px;grid-template-columns:230px minmax(0,1fr) 250px;grid-template-areas:"nav nav nav" "lead stage rail"}
+  .lead{display:block;grid-area:lead;position:sticky;top:16px}
+}
 #pgSet{
-  max-width:720px;margin:0 auto        /* the blog and settings stay a single centered column */
+  max-width:720px;margin:0 auto        /* settings stay a single centered column */
 }
 @media (max-width:720px){
-  .wrap{grid-template-columns:1fr}
-  .rail{grid-column:1;grid-row:1;position:static;max-height:none;overflow:visible}
-  .stage{grid-column:1;grid-row:2}
+  .wrap{grid-template-columns:1fr;grid-template-areas:"nav" "rail" "stage"}
+  .rail{position:static;max-height:none;overflow:visible}
   .rail .stats{grid-template-columns:repeat(3,1fr)}
 }
 
-/* wrap-reverse: on narrow phones the login/settings buttons move above the tabs instead of squeezing them. */
-header{
-  display:flex;flex-wrap:wrap-reverse;justify-content:space-between;align-items:flex-end;gap:10px;margin-bottom:16px
+/* the top bar: tabs in the middle, login/settings on the right. On phones the login/settings go above the tabs. */
+.topnav{
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:10px;margin-bottom:22px
+}
+.topnav .tabs{grid-column:2}
+.topnav .hr{grid-column:3;justify-self:end}
+@media (max-width:720px){
+  .topnav{grid-template-columns:1fr}
+  .topnav .tabs{grid-column:1;grid-row:2;justify-self:center}
+  .topnav .hr{grid-column:1;grid-row:1}
 }
 
-/* ===== FOLDER TABS (EXP / BLOG) =====
-   Old-style slanted tabs (clip-path cuts the angled sides), the same color as the page.
-   The front tab is taller, brighter and has an accent line on top. */
+/* ===== FOLDER TABS (PORTFOLIO / EXP / BLOG) =====
+   Each tab's outline is drawn by ::before, tilted back slightly so it narrows toward the top like an old file-folder tab.
+   It has a border on the top and sides only. The front tab is taller and brighter, with an accent line along its top. */
 .tabs{
   margin:0;display:flex;align-items:flex-end
 }
 
 .nv{
   position:relative;z-index:1;
-  padding:5px 18px 4px;
-  border-top:2px solid transparent;
-  background:var(--bg);
+  padding:7px 30px 6px;
   color:var(--mute);
   font-weight:400;font-size:13px;line-height:1;letter-spacing:1.5px;
   text-decoration:none;
-  clip-path:polygon(7px 0, calc(100% - 7px) 0, 100% 100%, 0 100%);
-  transition:background .22s, color .22s, padding .22s ease   /* back tab is shorter; it "rises" when it comes to the front */
+  transition:color .22s, padding .22s ease   /* back tabs are shorter; a tab "rises" when it comes to the front */
+}
+.nv::before{
+  content:"";position:absolute;inset:0;z-index:-1;
+  background:var(--bg);
+  border:1px solid color-mix(in srgb, var(--mute) 45%, transparent);border-bottom:0;
+  transform:perspective(18px) rotateX(1.5deg);transform-origin:bottom;
+  transition:border-color .22s
 }
 .nv+.nv{
-  margin-left:-6px                     /* tabs overlap a little, like real folders */
+  margin-left:-4px                     /* tabs overlap a little, like real folders */
 }
 .nv:hover{
-  color:var(--ink);padding-top:6px
+  color:var(--ink);padding-top:9px
 }
 .nv.cur{
   z-index:2;
-  padding-top:8px;
-  border-top-color:var(--acc);
+  padding-top:11px;
   color:var(--ink)
+}
+.nv.cur::before{
+  border-color:color-mix(in srgb, var(--mute) 80%, transparent);border-top:2px solid var(--acc)
 }
 
 .fh{
@@ -114,8 +132,7 @@ header{
   display:flex;
   align-items:center;
   gap:10px;
-  margin-bottom:8px;
-  margin-left:auto
+  margin-bottom:4px
 }
 
 .ib{
@@ -802,24 +819,20 @@ textarea{
 .pvpics img.on{opacity:1;outline-color:var(--acc)}
 .pvpics img:hover{opacity:1}
 
-/* ===== TOP OF EXP / BLOG: the newest post centered, with the heading and intro centered in the space to its left.
-   When that space gets too narrow (smaller laptop screens and phones), the heading and intro sit above the post instead. ===== */
-.hero{display:grid;grid-template-columns:1fr minmax(0,720px) 1fr;column-gap:28px;align-items:start;margin-bottom:22px}
-.lead{grid-column:1;justify-self:center;width:100%;max-width:240px}
-.featc{grid-column:2;min-width:0}
-.leadhead{position:relative;text-align:center}
+/* ===== TOP OF EXP / BLOG: the newest post, centered on its own row ===== */
+.hero{max-width:720px;margin:0 auto 22px}
+/* ===== THE INTRO (far-left column): heading, then the text; the ✕ folds the text away and becomes ⌄ ===== */
+.leadhead{position:relative;padding-right:24px}
 .leadhead .fh{margin:2px 0 8px}
-.introx{   /* the ✕ / ⌄ in the top-right corner of the intro: just an icon, no background */
+.introx{   /* just an icon, no background */
   position:absolute;top:0;right:0;background:none;border:0;padding:2px;color:var(--mute);cursor:pointer;display:flex;opacity:.7
 }
 .introx:hover{opacity:1;color:var(--ink)}
 .intro p{margin:0;font-size:13px;line-height:1.55;color:var(--mute)}
 .intro a{color:inherit}
-@media (max-width:1399px){
-  .hero{grid-template-columns:minmax(0,720px);justify-content:center}
-  .lead{grid-column:1;max-width:720px;margin-bottom:14px}
-  .leadhead{text-align:left}
-  .featc{grid-column:1}
-}
+/* ===== PORTFOLIO (for now) ===== */
+#pgPort{min-height:55vh;display:flex;align-items:center;justify-content:center}
+#pgPort[hidden]{display:none}
+.soon{margin:0;font-size:14px;color:var(--mute);text-align:center}
 /* the Blog page's sort control in the right column */
 .bside{margin-top:6px}

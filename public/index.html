@@ -16,11 +16,12 @@
 <body>
 <!-- figure out how to make these page buttons more attractive, and also how to turn blog into its own page-->
 
-<!-- Page layout: the board/posts on the left (.stage), everything else in a column on the right (.rail) -->
+<!-- Page layout: tabs across the top (.topnav); the intro in its own far-left column (.lead, only on wide screens);
+     the posts in the middle (.stage); stats, filters and sorting in a column on the right (.rail) -->
 <div class="wrap">
- <div class="rail">
-  <header>
+  <header class="topnav">
     <h1 class="tabs">
+      <a class="nv" id="nvP" href="/portfolio" data-act="go" data-v="portfolio">PORTFOLIO</a>
       <a class="nv" id="nvE" href="/exp" data-act="go" data-v="exp">EXP</a>
       <a class="nv" id="nvB" href="/blog" data-act="go" data-v="blog">BLOG</a>
     </h1>
@@ -37,6 +38,17 @@
   </button>
 </div>
   </header>
+  <!-- the heading and intro: kept out of the posts' way, shown only when the window is wide enough -->
+  <aside class="lead" id="lead">
+     <div class="leadhead">
+      <h2 class="fh" id="pgTitle">Experiences</h2>
+      <button class="introx" id="introx" data-act="intro" aria-label="Hide the intro" title="Hide"></button>
+     </div>
+     <div class="intro" id="intro">
+      <p>hello. I am Jawan. I am an insane man. This is my personal Blog website. I'm currently attempting to kick myself off of all mainstream social media sites and isolate myself in my own corner of the net. I know nothing of computers, and instead I relied exclusively upon Claude to hack this together. So there are probably extensive vulnerabilities all over this thing, all of which you can probably use to dox me and infiltrate my family. I kindly ask that you do not, and that if you have any burning questions, or any desire to hurt my feelings, that you forward them to my email: <a href="mailto:jawanali@gmail.com">jawanali@gmail.com</a></p>
+     </div>
+    </aside>
+ <div class="rail">
   <aside class="side" id="side">
     <section class="stats" id="statsBox">
       <div class="card">
@@ -60,22 +72,14 @@
   <div class="bside" id="bside" hidden></div>
  </div>
  <div class="stage">
-  <!-- EXP and Blog share this: heading + intro to the left of the newest post, then the board of preview cards -->
+  <!-- EXP and Blog share this: the newest post centered on top, then the board of preview cards -->
   <main id="pgList">
    <div class="hero">
-    <div class="lead">
-     <div class="leadhead">
-      <h2 class="fh" id="pgTitle">Experiences</h2>
-      <button class="introx" id="introx" data-act="intro" aria-label="Hide the intro" title="Hide"></button>
-     </div>
-     <div class="intro" id="intro">
-      <p>hello. I am Jawan. I am an insane man. This is my personal Blog website. I'm currently attempting to kick myself off of all mainstream social media sites and isolate myself in my own corner of the net. I know nothing of computers, and instead I relied exclusively upon Claude to hack this together. So there are probably extensive vulnerabilities all over this thing, all of which you can probably use to dox me and infiltrate my family. I kindly ask that you do not, and that if you have any burning questions, or any desire to hurt my feelings, that you forward them to my email: <a href="mailto:jawanali@gmail.com">jawanali@gmail.com</a></p>
-     </div>
-    </div>
     <div class="featc" id="feat"></div>
    </div>
    <div id="journal"></div>
   </main>
+  <main id="pgPort" hidden><p class="soon">coming soon! i.e. i've never finished a single project in my entire life</p></main>
   <main id="pgSet" hidden></main>
  </div>
 </div>
