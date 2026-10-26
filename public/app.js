@@ -326,9 +326,10 @@ function render() {
   const f = E.filter(e => KINDS.every(([k]) => !sel[k].size || tagsOf(e, k).some(t => sel[k].has(key(t))))).sort(cmp), sh = agg(f);
   // page switching + theme
   document.documentElement.dataset.page = page === 'blog' ? 'blog' : page === 'port' ? 'port' : 'exp';   // each page's colors
+  document.documentElement.dataset.view = page;   // which page is open (the newsletter design page uses it to take the right column's space)
   const list = page === 'exp' || page === 'blog';   // the two pages with a board
   $('pgList').hidden = !list; $('pgSet').hidden = page !== 'set'; $('pgPort').hidden = page !== 'port'; $('pgStats').hidden = page !== 'stats';
-  $('pgNews').hidden = page !== 'news' && page !== 'write';
+  $('pgNews').hidden = !['news', 'write', 'design'].includes(page);
   drawIntro(); drawNlBar();
   $('fab').hidden = !list || !owner; $('gear').hidden = !owner; $('status').hidden = !owner; $('status').textContent = 'Owner mode'; $('lock').textContent = owner ? 'Log out' : 'Owner login'; $('fab').textContent = page === 'blog' ? '+ Blog' : '+ Log';
   $('nvP').classList.toggle('cur', page === 'port'); $('nvE').classList.toggle('cur', page === 'exp' || page === 'set' || page === 'stats'); $('nvB').classList.toggle('cur', page === 'blog');
@@ -374,7 +375,7 @@ function render() {
   }
   if (page === 'set') renderSet();
   if (page === 'stats') renderStats();
-  if (page === 'news' || page === 'write') renderNews();
+  if (['news', 'write', 'design'].includes(page)) renderNews();
 }
 /* --- FILTER MENU: slides open and shut instead of snapping. The search box hides tags that don't match what you type. --- */
 function fsOpen(want) {
@@ -834,12 +835,12 @@ async function save(asDraft) {
 }
 
 /* --- ADDRESSES: /strictlybusiness (the home page), /exp and /blog are the pages, /exp/3 or /blog/3 opens item number 3,
-       /exp/stats is the Stats page, /settings is tag colors and the intro, /newsletter is the signup page (/newsletter/write: the composer). The bare address and the old /portfolio go to /strictlybusiness.
+       /exp/stats is the Stats page, /settings is tag colors and the intro, /newsletter is the signup page (/newsletter/write: the composer, /newsletter/design: its look and words). The bare address and the old /portfolio go to /strictlybusiness.
        Old links like /#e-ID or /#b-ID still work. route() reads the address bar; nav() changes it without reloading. --- */
 function route() {
   let [p, n] = location.pathname.split('/').filter(Boolean); const h = location.hash.slice(1);
-  page = p === 'blog' ? 'blog' : p === 'exp' ? (n === 'stats' ? 'stats' : 'exp') : p === 'settings' ? 'set' : p === 'stats' ? 'stats' : p === 'newsletter' ? (n === 'write' ? 'write' : 'news') : 'port';   // anything else: Strictly Business
-  if (page === 'news' || page === 'write') n = null;
+  page = p === 'blog' ? 'blog' : p === 'exp' ? (n === 'stats' ? 'stats' : 'exp') : p === 'settings' ? 'set' : p === 'stats' ? 'stats' : p === 'newsletter' ? (n === 'write' || n === 'design' ? n : 'news') : 'port';   // anything else: Strictly Business
+  if (['news', 'write', 'design'].includes(page)) n = null;
   if (page === 'stats') { n = null; if (p === 'stats') history.replaceState(null, '', '/exp/stats'); }   // the Stats page lives at /exp/stats (old /stats forwards)
   focus = n || null;
   if (/^[eb]-/.test(h)) { page = h[0] === 'b' ? 'blog' : 'exp'; focus = h.slice(2); }
