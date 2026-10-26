@@ -731,6 +731,7 @@ textarea{
 .rich .ql-ui{display:none}
 
 /* ===== THE BOARD (EXP page) — see "THE BOARD" in app.js ===== */
+#journal{overflow-anchor:none}   /* the page's own steadying (in toggleCard) handles scrolling; don't let Chrome also try */
 .rail .stats{margin-top:0}
 .feat{max-width:720px;margin:0 auto 22px}   /* the newest post, full size, centered on its own row */
 .feat .entry{margin-bottom:0}

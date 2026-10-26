@@ -231,23 +231,41 @@ function layoutBoard() { const b = $('board'); if (!b) return; const cols = boar
 // photos finishing loading or the window changing size: refit the cards
 const boardRO = new ResizeObserver(es => { if (!$('board')) return; if (es.some(x => x.target === $('board'))) layoutBoard(); else es.forEach(x => { const bi = x.target.closest('.bi'); if (bi) layoutItem(bi); }); });
 function drawBoard(list) {
-  boardRO.disconnect();
+  boardRO.disconnect(); $('journal').style.paddingBottom = '';
   const [first, ...rest] = list;
   $('journal').innerHTML = `<div class="feat">${card(first)}</div>` + (rest.length ? `<div class="board" id="board">${rest.map(boardCard).join('')}</div>` : '');
   if (!rest.length) return;
   layoutBoard(); boardRO.observe($('board')); $('board').querySelectorAll('.bi > .card').forEach(c => boardRO.observe(c));
 }
-// expand or shrink one card; every card glides from where it was to where it lands (the "FLIP" animation trick)
+/* --- EXPAND / SHRINK one card. Only that card is redrawn (so nothing else reloads), and the page is steadied so the card
+       starts from exactly where it was on your screen. Every card then glides from its old spot to its new one (the "FLIP"
+       animation trick), while the page gently scrolls the card into a good reading spot:
+       expanding puts its top near the top of the screen; shrinking keeps it in view (centered if it would be off-screen). --- */
+const FOCUS_TOP = 70;   // how far below the top of the screen an expanded post settles
+// near the bottom of the board there may not be enough page left to scroll a post up to its reading spot: add empty space below.
+// It only ever grows while you're reading (shrinking it would make the page jump) and is reset when the board is redrawn.
+function roomBelow(target) {
+  const j = $('journal'), cur = parseInt(j.style.paddingBottom) || 0, need = target + innerHeight - (document.documentElement.scrollHeight - cur);
+  if (need > cur) j.style.paddingBottom = need + 'px';
+}
 function toggleCard(id) {
-  const was = new Map([...document.querySelectorAll('#board .bi')].map(x => [x.dataset.id, x.getBoundingClientRect()]));
+  const old = document.querySelector(`#board .bi[data-id="${id}"]`), e = all.find(x => x.id === id); if (!old || !e) return;
+  const was = new Map([...document.querySelectorAll('#board .bi')].map(x => [x.dataset.id, x.getBoundingClientRect()])), a = was.get(id);
   opened.has(id) ? opened.delete(id) : opened.add(id);
-  render();
+  const t = document.createElement('div'); t.innerHTML = boardCard(e); const bi = t.firstElementChild;
+  old.replaceWith(bi); boardRO.observe(bi.querySelector('.card')); layoutBoard();
+  // steady the page: scroll by however far the card moved, so on screen it hasn't moved at all
+  window.scrollTo({top: scrollY + bi.getBoundingClientRect().top - a.top, behavior: 'auto'});
   document.querySelectorAll('#board .bi').forEach(x => {
-    const a = was.get(x.dataset.id); if (!a) return;
-    const b = x.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top;
-    const from = `translate(${dx}px, ${dy}px)` + (x.dataset.id === id ? ` scale(${a.width / b.width}, ${a.height / b.height})` : '');
-    if (dx || dy || x.dataset.id === id) x.animate([{transform: from, transformOrigin: 'top left'}, {transform: 'none', transformOrigin: 'top left'}], {duration: 340, easing: 'cubic-bezier(.2,.7,.2,1)'});
+    const p = was.get(x.dataset.id); if (!p) return;
+    const q = x.getBoundingClientRect(), dx = p.left - q.left, dy = p.top - q.top;
+    const from = `translate(${dx}px, ${dy}px)` + (x === bi ? ` scale(${p.width / q.width}, ${p.height / q.height})` : '');
+    if (dx || dy || x === bi) x.animate([{transform: from, transformOrigin: 'top left'}, {transform: 'none', transformOrigin: 'top left'}], {duration: 380, easing: 'cubic-bezier(.2,.7,.2,1)'});
   });
+  // then glide to a comfortable reading spot
+  const r = bi.getBoundingClientRect(), top = r.top + scrollY;
+  if (opened.has(id)) { roomBelow(top - FOCUS_TOP); window.scrollTo({top: Math.max(0, top - FOCUS_TOP), behavior: 'smooth'}); }
+  else if (r.top < FOCUS_TOP || r.bottom > innerHeight - 20) window.scrollTo({top: Math.max(0, top - Math.max(FOCUS_TOP, (innerHeight - r.height) / 2)), behavior: 'smooth'});
 }
 const bcard = p => {
   const parts = {title: ttl('blog', p), time: `<div class="top"><span>${new Date(p.created).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</span></div>`,
