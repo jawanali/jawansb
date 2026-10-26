@@ -47,6 +47,7 @@
      </div>
      <!-- filled in by app.js: your intro from Settings (or the default text) -->
      <div class="intro" id="intro"></div>
+     <a class="link nllink" href="/newsletter" data-act="go" data-v="newsletter">Get the weekly newsletter →</a>
     </aside>
  <div class="rail">
   <!-- owner only: start a new experience (EXP page) or blog post (Blog page) -->
@@ -76,6 +77,8 @@
   <div class="bside" id="bside" hidden></div>
  </div>
  <div class="stage">
+  <!-- owner only, Friday to Sunday: the "It's Newsletter time!" reminder (newsletter.js) -->
+  <div class="nlbar" id="nlbar" hidden></div>
   <!-- EXP and Blog share this: the newest post centered on top, then the board of preview cards -->
   <main id="pgList">
    <div class="hero">
@@ -86,6 +89,7 @@
   <main id="pgPort" hidden><p class="soon">coming soon! i.e. i've never finished a single project in my entire life</p></main>
   <main id="pgStats" hidden></main>
   <main id="pgSet" hidden></main>
+  <main id="pgNews" hidden></main>
  </div>
 </div>
 
@@ -133,6 +137,8 @@
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
 
+<!-- newsletter.js only defines things, so it loads first; app.js starts the site -->
+<script src="/newsletter.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

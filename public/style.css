@@ -888,3 +888,30 @@ textarea{
   .stbar{position:static}
   #pgStats [id^=st-]{scroll-margin-top:10px}
 }
+
+/* ===== NEWSLETTER (newsletter.js): the signup page, the composer, the Friday reminder ===== */
+#pgNews{max-width:720px;margin:0 auto}
+.nlsign{max-width:520px;margin:30px auto 0;text-align:center}
+.nlsign .fh{font-size:30px;margin:0 0 10px}
+.nlform{display:flex;gap:8px;margin:20px 0 6px}
+.nlform .go{width:auto;margin:0;padding:9px 18px;font-size:14px;letter-spacing:1px}
+.hp{position:absolute;left:-9999px;width:1px;height:1px}   /* a hidden box only robots fill in */
+.nlok{color:var(--acc);margin:18px 0}
+.nlfine{font-size:13px}
+.nllink{display:block;margin-top:14px;padding:0;font-size:14px}
+.nlbar{border:1px solid var(--acc);color:var(--ink);padding:9px 14px;margin:0 0 16px;font-size:15px}
+.nlbar b{color:var(--acc)}
+.nlbar .link{padding:0;margin-left:6px}
+.nlsubj{margin:0;font-family:Georgia,serif}
+#nlEd{min-height:140px}
+.nlparts{display:grid;gap:4px;margin:6px 0 10px}
+.nlpart{display:flex;align-items:center;gap:4px}
+.nlpart .chk{margin:0;flex:1;font-size:14px}
+.nlpart .ib:disabled{opacity:.3;cursor:default}
+.nlpics{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0}
+.nlpic{padding:0;border:2px solid transparent;background:none;cursor:pointer}
+.nlpic.on{border-color:var(--acc)}
+.nlpic img{display:block;height:54px}
+.nlbtns{margin-top:20px}
+#nlUn{display:block;margin:10px 0 0;padding:0}
+.nlpv{display:block;width:100%;height:700px;border:1px solid var(--line);background:#313E50}

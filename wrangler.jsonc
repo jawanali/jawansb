@@ -1,6 +1,8 @@
 {
   "name": "jawansb",
   "compatibility_date": "2026-10-01",
+  // the behind-the-scenes code (newsletter signup and sending). It only handles addresses starting with /api/
+  "main": "src/worker.js",
   // "single-page-application" = any address like /exp, /blog or /exp/3 gets index.html, and app.js decides what to show
-  "assets": { "directory": "./public", "not_found_handling": "single-page-application" }
+  "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] }
 }

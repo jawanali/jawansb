@@ -174,9 +174,10 @@ const orderOf = x => {
 const TINT_CARDS = true, TINT_STRENGTH = 0.3, TINT_BASE = '#3a435e';   // TINT_BASE = the normal box color, without its see-through part
 const mixHex = l => '#' + [0, 1, 2].map(i => Math.round(l.reduce((a, c) => a + h2r(c)[i], 0) / l.length).toString(16).padStart(2, '0')).join('');
 const blend = (a, b, t) => '#' + [0, 1, 2].map(i => Math.round(h2r(a)[i] * (1 - t) + h2r(b)[i] * t).toString(16).padStart(2, '0')).join('');
+const tintBg = e => { const t = tagsOf(e, 'types'); return TINT_CARDS && t.length ? blend(TINT_BASE, mixHex(t.map(n => tcol('types', n))), TINT_STRENGTH) : null; };   // the box color, or null (also used by the newsletter)
 const tint = e => {
-  const t = tagsOf(e, 'types'); if (!TINT_CARDS || !t.length) return '';
-  const bg = blend(TINT_BASE, mixHex(t.map(n => tcol('types', n))), TINT_STRENGTH), fg = ink(bg), mix = p => `color-mix(in srgb, ${fg} ${p}%, ${bg})`;
+  const bg = tintBg(e); if (!bg) return '';
+  const fg = ink(bg), mix = p => `color-mix(in srgb, ${fg} ${p}%, ${bg})`;
   return `background:${bg};--ink:${fg};--mute:${mix(82)};--line:${mix(22)};--star-off:${mix(32)}`;
 };
 /* --- FORMATTED TEXT on posts: descriptions saved from the editor ("html") are cleaned by DOMPurify first,
@@ -327,7 +328,8 @@ function render() {
   document.documentElement.dataset.page = page === 'blog' ? 'blog' : page === 'port' ? 'port' : 'exp';   // each page's colors
   const list = page === 'exp' || page === 'blog';   // the two pages with a board
   $('pgList').hidden = !list; $('pgSet').hidden = page !== 'set'; $('pgPort').hidden = page !== 'port'; $('pgStats').hidden = page !== 'stats';
-  drawIntro();
+  $('pgNews').hidden = page !== 'news' && page !== 'write';
+  drawIntro(); drawNlBar();
   $('fab').hidden = !list || !owner; $('gear').hidden = !owner; $('status').hidden = !owner; $('status').textContent = 'Owner mode'; $('lock').textContent = owner ? 'Log out' : 'Owner login'; $('fab').textContent = page === 'blog' ? '+ Blog' : '+ Log';
   $('nvP').classList.toggle('cur', page === 'port'); $('nvE').classList.toggle('cur', page === 'exp' || page === 'set' || page === 'stats'); $('nvB').classList.toggle('cur', page === 'blog');
   // top cards show the filtered numbers while a filter is on
@@ -372,6 +374,7 @@ function render() {
   }
   if (page === 'set') renderSet();
   if (page === 'stats') renderStats();
+  if (page === 'news' || page === 'write') renderNews();
 }
 /* --- FILTER MENU: slides open and shut instead of snapping. The search box hides tags that don't match what you type. --- */
 function fsOpen(want) {
@@ -816,7 +819,7 @@ async function save(asDraft) {
   const iso = x => isNaN(x) ? null : x.toISOString(), order = [...$('secs').children].map(x => x.dataset.sec), imgH = draft.imgs.map(im => im.h || null);
   // a draft is always private (it remembers your Public choice for later) and has no number; publishing gives it the next number
   const extra = asDraft ? {draft: true, is_public: false, wantPublic: pub, saved: new Date().toISOString()}
-    : {is_public: pub, num: (draft.old && draft.old.num) || nextNum(b ? posts() : ents())};
+    : {is_public: pub, num: (draft.old && draft.old.num) || nextNum(b ? posts() : ents()), ...(b ? {} : {logged: (draft.old && !wasDraft() && (draft.old.logged || draft.old.start)) || new Date().toISOString()})};   // logged = when it first went up (editing an older one keeps it old)
   const o = b ? {kind: 'post', id, ...extra, title: t, body: d, html, images, imgH, order, created: draft.old && !wasDraft() ? draft.old.created : new Date().toISOString(),
       pvShow: draft.pv.show, pvOrder: draft.pv.order || undefined, pvC: draft.pv.c, pvR: draft.pv.r, pvImg: draft.pv.img, pvImgH: draft.pv.imgH}
     : {id, ...extra, title: t, desc: d, html, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order, movie: metaOf('movie'), music: metaOf('music'),
@@ -831,11 +834,12 @@ async function save(asDraft) {
 }
 
 /* --- ADDRESSES: /strictlybusiness (the home page), /exp and /blog are the pages, /exp/3 or /blog/3 opens item number 3,
-       /exp/stats is the Stats page, /settings is tag colors and the intro. The bare address and the old /portfolio go to /strictlybusiness.
+       /exp/stats is the Stats page, /settings is tag colors and the intro, /newsletter is the signup page (/newsletter/write: the composer). The bare address and the old /portfolio go to /strictlybusiness.
        Old links like /#e-ID or /#b-ID still work. route() reads the address bar; nav() changes it without reloading. --- */
 function route() {
   let [p, n] = location.pathname.split('/').filter(Boolean); const h = location.hash.slice(1);
-  page = p === 'blog' ? 'blog' : p === 'exp' ? (n === 'stats' ? 'stats' : 'exp') : p === 'settings' ? 'set' : p === 'stats' ? 'stats' : 'port';   // anything else: Strictly Business
+  page = p === 'blog' ? 'blog' : p === 'exp' ? (n === 'stats' ? 'stats' : 'exp') : p === 'settings' ? 'set' : p === 'stats' ? 'stats' : p === 'newsletter' ? (n === 'write' ? 'write' : 'news') : 'port';   // anything else: Strictly Business
+  if (page === 'news' || page === 'write') n = null;
   if (page === 'stats') { n = null; if (p === 'stats') history.replaceState(null, '', '/exp/stats'); }   // the Stats page lives at /exp/stats (old /stats forwards)
   focus = n || null;
   if (/^[eb]-/.test(h)) { page = h[0] === 'b' ? 'blog' : 'exp'; focus = h.slice(2); }
