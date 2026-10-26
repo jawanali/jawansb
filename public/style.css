@@ -17,6 +17,11 @@
  padding-bottom:env(safe-area-inset-bottom,0px)
 }
 
+/* the Portfolio page: all black, white text */
+:root[data-page="port"]{
+  --bg:#000;--card:#111;--panel:#111;--ink:#fff;--mute:#a8a8a8;--line:#2a2a2a;--acc:#fff;--on:#000
+}
+
 :root[data-page="blog"]
   {--bg:#e1e1e1;
     --card:#fff;
@@ -833,6 +838,15 @@ textarea{
 /* ===== PORTFOLIO (for now) ===== */
 #pgPort{min-height:55vh;display:flex;align-items:center;justify-content:center}
 #pgPort[hidden]{display:none}
-.soon{margin:0;font-size:14px;color:var(--mute);text-align:center}
+.soon{margin:0;font-size:14px;color:var(--ink);text-align:center}   /* white on the black Portfolio page */
 /* the Blog page's sort control in the right column */
 .bside{margin-top:6px}
+
+/* ===== LITE YOUTUBE: a thumbnail with a play button, until clicked ===== */
+.rich .yt{position:relative;display:block;width:100%;aspect-ratio:16/9;margin:8px 0;padding:0;border:0;background:#000;cursor:pointer;overflow:hidden}
+.rich .yt img{width:100%;height:100%;object-fit:cover;display:block}
+.rich .yt .ytp{   /* the play button: a plain dark box (sharp corners, like the rest of the site); red on hover */
+  position:absolute;left:50%;top:50%;width:64px;height:44px;transform:translate(-50%,-50%);background:rgba(0,0,0,.72);transition:background .15s
+}
+.rich .yt .ytp::after{content:"";position:absolute;left:26px;top:13px;border-style:solid;border-width:9px 0 9px 15px;border-color:transparent transparent transparent #fff}
+.rich .yt:hover .ytp{background:#c00}

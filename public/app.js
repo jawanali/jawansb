@@ -123,7 +123,7 @@ const dirBtn = () => {
 
 /* --- DRAWING THE SCREEN --- */
 // A photo with a resize handle on its bottom-right corner. h = the height saved for it (none = the default size).
-const rz = (src, h, attrs = '', inner = '') => `<span class="rz"${attrs}><img class="th" loading="lazy" alt="" src="${esc(src)}"${h ? ` style="height:${h}px"` : ''}><i class="rzh" title="Drag to resize"></i>${inner}</span>`;
+const rz = (src, h, attrs = '', inner = '') => `<span class="rz"${attrs}><img class="th" loading="lazy" decoding="async" alt="" src="${esc(src)}"${h ? ` style="height:${h}px"` : ''}><i class="rzh" title="Drag to resize"></i>${inner}</span>`;
 /* --- PHOTOS: each photo is its own item: a key (its stored file name; brand-new ones have a temporary key until saved),
        where to load it from, and its size. A photo either sits in the Photos block (the gallery) or inside the description
        (an <img class="pic" data-key="..."> there); never both. --- */
@@ -172,7 +172,15 @@ const YT_EMBED = /^https:\/\/www\.youtube(-nocookie)?\.com\/embed\/[\w-]{11}/;
 const rich = (h, e) => {   // e = the post, so photos placed in the text can be found
   if (!h || !window.DOMPurify) return '';   // no cleaner loaded: fall back to the plain-text copy
   const f = DOMPurify.sanitize(h, {ADD_TAGS: ['iframe'], ADD_ATTR: ['allowfullscreen', 'frameborder', 'allow'], RETURN_DOM_FRAGMENT: true});
-  f.querySelectorAll('iframe').forEach(x => YT_EMBED.test(x.getAttribute('src') || '') || x.remove());
+  f.querySelectorAll('iframe').forEach(x => {
+    const src = x.getAttribute('src') || '', id = (src.match(/embed\/([\w-]{11})/) || [])[1];
+    if (!YT_EMBED.test(src) || !id) { x.remove(); return; }
+    // LITE YOUTUBE: show the video's thumbnail with a play button; the real (heavy) YouTube player only loads when it's clicked.
+    // This keeps page switching fast, and visitors don't touch YouTube at all unless they press play.
+    const b = document.createElement('button'); b.className = 'yt'; b.dataset.act = 'ytplay'; b.dataset.v = src; b.setAttribute('aria-label', 'Play video');
+    b.innerHTML = `<img src="https://i.ytimg.com/vi/${id}/hqdefault.jpg" alt="" loading="lazy" decoding="async"><span class="ytp"></span>`;
+    x.replaceWith(b);
+  });
   f.querySelectorAll('a[href]').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });   // links open in a new tab
   const pics = e ? picsOf(e) : [];
   f.querySelectorAll('img.pic').forEach(x => {   // a photo placed in the text: show it like any post photo, at its saved size
@@ -292,10 +300,9 @@ function render() {
   const E = ents(), filtered = KINDS.some(([k]) => sel[k].size);
   const f = E.filter(e => KINDS.every(([k]) => !sel[k].size || tagsOf(e, k).some(t => sel[k].has(key(t))))).sort(cmp), sh = agg(f);
   // page switching + theme
-  document.documentElement.dataset.page = page === 'blog' ? 'blog' : 'exp';
+  document.documentElement.dataset.page = page === 'blog' ? 'blog' : page === 'port' ? 'port' : 'exp';   // each page's colors
   const list = page === 'exp' || page === 'blog';   // the two pages with a board
   $('pgList').hidden = !list; $('pgSet').hidden = page !== 'set'; $('pgPort').hidden = page !== 'port';
-  $('pgTitle').textContent = page === 'blog' ? 'Blog' : page === 'port' ? 'Portfolio' : 'Experiences';
   drawIntro();
   $('fab').hidden = !list || !owner; $('gear').hidden = !owner; $('status').hidden = !owner; $('status').textContent = 'Owner mode'; $('lock').textContent = owner ? 'Log out' : 'Owner login'; $('fab').textContent = page === 'blog' ? '+ Blog' : '+ Log';
   $('nvP').classList.toggle('cur', page === 'port'); $('nvE').classList.toggle('cur', page === 'exp' || page === 'set'); $('nvB').classList.toggle('cur', page === 'blog');
@@ -711,6 +718,11 @@ document.addEventListener('click', ev => {
   else if (a === 'close') $('modal').hidden = true;
   else if (a === 'save') save();
   else if (a === 'expand') toggleCard(v);
+  else if (a === 'ytplay') {   // swap the video's thumbnail for the real YouTube player, already playing
+    const f = document.createElement('iframe');
+    f.src = v + (v.includes('?') ? '&' : '?') + 'autoplay=1'; f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen'; f.allowFullScreen = true;
+    b.replaceWith(f);
+  }
   else if (a === 'pvedit') pvMode(true);
   else if (a === 'pvback') pvMode(false);
   else if (a === 'pvauto') { draft.pv.c = draft.pv.r = undefined; sizePvCard(); }
