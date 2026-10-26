@@ -7,6 +7,15 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 const BASE = location.origin;
 // The three tag categories, in the order they appear everywhere: [storage name, label, placeholder]
 const KINDS = [['types', 'Type'], ['people', 'People'], ['places', 'Location']];
+/* --- MOVIE / MUSIC METADATA: extra details kept on an experience whose Type is a movie or music, for your libraries and stats.
+       Saved as data.movie = {year, director, genre, country, poster} and data.music = {year, artist, genre, country, cover}.
+       Every field is a list (add as many as you like); poster / cover are uploaded images. None of it is shown on the site. --- */
+const META = {
+  movie: {label: 'Movie Metadata', match: /^(movies?|films?)$/i, fields: [['year', 'Year'], ['director', 'Director'], ['genre', 'Genre'], ['country', 'Country']], art: ['poster', 'Poster']},
+  music: {label: 'Music Metadata', match: /^(music|songs?|albums?)$/i, fields: [['year', 'Year'], ['artist', 'Artist'], ['genre', 'Genre'], ['country', 'Country']], art: ['cover', 'Cover Art']}
+};
+const META_KEYS = Object.entries(META).flatMap(([g, m]) => m.fields.map(([f]) => g + '.' + f));   // tag keys like "movie.director"
+const TAG_KEYS = [...KINDS.map(([k]) => k), ...META_KEYS];   // every kind of tag box in the form
 const sel = {types: new Set(), people: new Set(), places: new Set()};
 let all = [], loaded = false, assets = true, page = 'exp', focus = null, sortBy = 'date', sortDir = 'desc', draft = null;
 // Drafts are saved like normal items but marked draft: true, so they stay out of the journal, blog, stats and numbering
@@ -15,7 +24,7 @@ const ents = () => all.filter(x => !x.kind && !x.draft), posts = () => all.filte
 const settings = () => all.find(x => x.id === 'settings') || {id: 'settings', kind: 'settings'};
 const saveSettings = patch => put({...settings(), ...patch});
 const colors = () => settings().colors || {};
-const tagsOf = (e, k) => k === 'types' ? (e.types || (e.type ? [e.type] : [])) : (e[k] || []);
+const tagsOf = (e, k) => k === 'types' ? (e.types || (e.type ? [e.type] : [])) : k.includes('.') ? ((e[k.split('.')[0]] || {})[k.split('.')[1]] || []) : (e[k] || []);
 
 /* --- TAG COLORS. Every tag gets an automatic color (from its name) unless you pick one in Settings.
        ink() then chooses the text color: it tries a very dark and a very light shade of the SAME hue as the tag,
@@ -53,7 +62,7 @@ async function load() {
   const {data, error} = await sb.from('items').select('*');   // visitors only receive public rows; you receive everything
   if (error) { flash('Could not load: ' + error.message); return; }
   all = data.map(toDoc); loaded = true;
-  CANON = {}; ents().forEach(e => KINDS.forEach(([k]) => tagsOf(e, k).forEach(n => CANON[k + ':' + key(n)] ??= n)));
+  CANON = {}; ents().forEach(e => TAG_KEYS.forEach(k => tagsOf(e, k).forEach(n => CANON[k + ':' + key(n)] ??= n)));
   render(); if (!$('modal').hidden) drawDrafts();
   if (owner) backfill();
 }
@@ -401,8 +410,29 @@ const btnReset = () => { $('go').disabled = $('sd').disabled = false; $('go').te
 // While you type, tags you've used before that match show up underneath (#s-types etc.).
 const tfBlock = ([k, l]) => `<div class="tin"><label>${l}</label><div id="c-${k}"></div><input id="i-${k}" data-k="${k}" autocomplete="off"><div class="sug" id="s-${k}" hidden></div></div>`;
 $('tfType').innerHTML = tfBlock(KINDS[0]); $('tf').innerHTML = `<div class="two">${tfBlock(KINDS[1])}${tfBlock(KINDS[2])}</div>`;
+// the Movie / Music Metadata sections (under Type). They're built once and only shown when a Type tag matches.
+$('tfMeta').innerHTML = Object.entries(META).map(([g, m]) => `<div class="meta" id="meta-${g}" hidden><h4 class="mtitle">${m.label}</h4>
+  <div class="two">${m.fields.slice(0, 2).map(([f, l]) => tfBlock([g + '.' + f, l])).join('')}</div>
+  <div class="two">${m.fields.slice(2).map(([f, l]) => tfBlock([g + '.' + f, l])).join('')}</div>
+  <div><label>${m.art[1]}</label><div class="arts" id="art-${g}"></div><input type="file" accept="image/*" multiple data-art="${g}"></div></div>`).join('');
+function drawMeta() {
+  for (const [g, m] of Object.entries(META)) {
+    $('meta-' + g).hidden = !draft.types.some(t => m.match.test(t.trim()));
+    $('art-' + g).innerHTML = draft.art[g].map((im, i) => `<span class="pv"><img class="th" src="${esc(im.url)}" alt=""><button class="x1" data-act="rmArt" data-k="${g}" data-v="${i}" title="Remove">✕</button></span>`).join('');
+  }
+}
+// poster / cover art: shrunk in your browser like photos, uploaded when you save
+$('tfMeta').addEventListener('change', async ev => {
+  const g = ev.target.dataset.art; if (!g) return;
+  for (const f of [...ev.target.files]) {
+    try { const b = await shrink(f); draft.art[g].push({blob: b, url: URL.createObjectURL(b)}); }
+    catch (x) { $('err').textContent = 'Could not read “' + f.name + '”.'; }
+  }
+  ev.target.value = ''; drawMeta();
+});
 function drawDraft() {
-  KINDS.forEach(([k]) => $('c-' + k).innerHTML = draft[k].map(n => `<span class="chip" style="${ts(k, n)}">${esc(n)}<button class="x" data-act="rmTag" data-k="${k}" data-v="${esc(n)}">✕</button></span>`).join(''));
+  TAG_KEYS.forEach(k => $('c-' + k).innerHTML = draft[k].map(n => `<span class="chip" style="${ts(k, n)}">${esc(n)}<button class="x" data-act="rmTag" data-k="${k}" data-v="${esc(n)}">✕</button></span>`).join(''));
+  drawMeta();
   drawStars();
   $('ph').innerHTML = draft.imgs.map((im, i) => rz(im.url, im.h, ` data-i="${i}"`, `<button class="x1" data-act="rmI" data-v="${i}" title="Remove this photo">✕</button><button class="pin" data-act="pin" data-v="${i}"></button>`).replace('class="rz"', 'class="rz pv"')).join('');
   drawPins();
@@ -518,9 +548,11 @@ function addTag(k) {
   drawDraft();
 }
 function openModal(kind, old) {
-  draft = {kind, rating: 0, types: [], people: [], places: [], imgs: []};
+  draft = {kind, rating: 0, imgs: [], ...Object.fromEntries(TAG_KEYS.map(k => [k, []])),
+    art: Object.fromEntries(Object.keys(META).map(g => [g, ((old && old[g] && old[g][META[g].art[0]]) || []).map(r => ({ref: r, url: imgSrc(r)}))]))};
+  TAG_KEYS.forEach(k => { $('i-' + k).value = ''; $('s-' + k).hidden = true; });   // start with empty tag boxes (nothing left over from the last form)
   orderOf(old || {}).map(k => $('secs').querySelector(`[data-sec="${k}"]`)).filter(Boolean).forEach(x => $('secs').appendChild(x));   // lay the blocks out in this post's order
-  if (old) draft = {...draft, rating: old.rating || 0, imgs: (old.images || []).map((r, i) => ({key: r, ref: r, url: imgSrc(r), h: (old.imgH || [])[i] || null})), editId: old.id, old, ...Object.fromEntries(KINDS.map(([k]) => [k, [...tagsOf(old, k)]]))};
+  if (old) draft = {...draft, rating: old.rating || 0, imgs: (old.images || []).map((r, i) => ({key: r, ref: r, url: imgSrc(r), h: (old.imgH || [])[i] || null})), editId: old.id, old, ...Object.fromEntries(TAG_KEYS.map(k => [k, [...tagsOf(old, k)]]))};
   const now = new Date();
   $('s').value = loc(old && old.start ? new Date(old.start) : new Date(now - 36e5)); $('e').value = loc(old && old.end ? new Date(old.end) : now);
   $('t').value = old ? old.title : ''; edSet(old); $('fi').value = '';
@@ -678,7 +710,7 @@ $('fi').addEventListener('change', async ev => {
   ev.target.value = ''; drawDraft();
 });
 async function save(asDraft) {
-  KINDS.forEach(([k]) => addTag(k));
+  TAG_KEYS.forEach(k => addTag(k));   // anything typed but not yet added becomes a tag
   const b = draft.kind === 'b', t = $('t').value.trim(), s = new Date($('s').value), e = new Date($('e').value), m = Math.round((e - s) / 6e4);
   const err = asDraft ? '' : !t ? 'Give it a title.' : !b && !(m > 0) ? 'End time must be after the start time.' : !b && !draft.rating ? 'Pick a star rating.' : '';
   if (err) { $('err').textContent = err; return; }
@@ -688,6 +720,11 @@ async function save(asDraft) {
   const renamed = {};   // brand-new photos: temporary key -> real file name once uploaded
   try { for (const im of draft.imgs) { im.ref = im.ref || await upImg(im.blob); if (im.key !== im.ref) { renamed[im.key] = im.ref; im.key = im.ref; } images.push(im.ref); } }   // remember uploads, so saving again doesn't re-upload
   catch (x) { return fail('Photo upload failed: ' + x.message); }
+  const art = {};   // poster / cover art file names
+  try { for (const g in META) { art[g] = []; for (const im of draft.art[g]) { im.ref = im.ref || await upImg(im.blob); art[g].push(im.ref); } } }
+  catch (x) { return fail('Image upload failed: ' + x.message); }
+  // one experience's movie or music details, e.g. {year: ['1989'], director: ['Herbert Ross'], genre: [...], country: [...], poster: [file]}
+  const metaOf = g => { const o = Object.fromEntries(META[g].fields.map(([f]) => [f, draft[g + '.' + f]])); o[META[g].art[0]] = art[g]; return Object.values(o).some(v => v.length) ? o : undefined; };
   if (Q) Q.root.querySelectorAll('img.pic').forEach(x => { if (renamed[x.dataset.key]) x.dataset.key = renamed[x.dataset.key]; });
   if (renamed[draft.pv.img]) draft.pv.img = renamed[draft.pv.img];
   const id = draft.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), {text: d} = edGet(), pub = $('pub').checked;
@@ -701,11 +738,12 @@ async function save(asDraft) {
     : {is_public: pub, num: (draft.old && draft.old.num) || nextNum(b ? posts() : ents())};
   const o = b ? {kind: 'post', id, ...extra, title: t, body: d, html, images, imgH, order, created: draft.old && !wasDraft() ? draft.old.created : new Date().toISOString(),
       pvShow: draft.pv.show, pvOrder: draft.pv.order || undefined, pvC: draft.pv.c, pvR: draft.pv.r, pvImg: draft.pv.img, pvImgH: draft.pv.imgH}
-    : {id, ...extra, title: t, desc: d, html, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order,
+    : {id, ...extra, title: t, desc: d, html, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order, movie: metaOf('movie'), music: metaOf('music'),
       pvShow: draft.pv.show, pvOrder: draft.pv.order || undefined, pvC: draft.pv.c, pvR: draft.pv.r, pvImg: draft.pv.img, pvImgH: draft.pv.imgH};   // the preview card's settings
   const ok = await put(o);
   if (!ok) return fail('Could not save. Are you still logged in?');
-  const gone = draft.old ? (draft.old.images || []).filter(i => !images.includes(i)) : [];
+  const artOf = x => Object.keys(META).flatMap(g => (x && x[g] && x[g][META[g].art[0]]) || []), kept = [...images, ...artOf(o)];
+  const gone = draft.old ? [...(draft.old.images || []), ...artOf(draft.old)].filter(i => !kept.includes(i)) : [];   // files you removed: delete them
   if (gone.length) await sb.storage.from('photos').remove(gone);
   if (asDraft) { draft.editId = id; draft.old = o; $('mh').textContent = 'New ' + (b ? 'post' : 'experience') + ' · draft'; btnReset(); drawDrafts(); flash('Draft saved'); return; }   // keep writing
   $('modal').hidden = true;
@@ -755,6 +793,7 @@ document.addEventListener('click', ev => {
     if (focus) nav('/exp'); else { render(); if (on) scrollTo(0, 0); }
   }
   else if (a === 'pick') { $('i-' + k).value = v; addTag(k); suggest(k); }   // clicked a tag suggestion
+  else if (a === 'rmArt') { draft.art[k].splice(+v, 1); drawMeta(); }
   else if (a === 'rmTag') { draft[k] = draft[k].filter(n => n !== v); drawDraft(); }
   else if (a === 'rmI') { removePic(draft.imgs[+v].key); draft.imgs.splice(+v, 1); drawDraft(); }   // also takes it out of the text
   else if (a === 'pin') pinToggle(+v);

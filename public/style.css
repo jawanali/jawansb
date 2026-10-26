@@ -847,3 +847,9 @@ textarea{
 .rich .yt:hover .ytp{background:#c00}
 .intro p + p{margin-top:8px}   /* space between paragraphs of the intro */
 #pgSet textarea{min-height:170px}
+
+/* ===== MOVIE / MUSIC METADATA (in the form, under Type) ===== */
+.meta{margin-top:12px;padding:8px 12px 12px;border-left:2px solid var(--acc)}
+.mtitle{margin:0;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--acc)}
+.arts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.arts .th{height:110px;cursor:default}
