@@ -233,10 +233,11 @@ function layoutItem(bi, cols = boardCols()) {
 function layoutBoard() { const b = $('board'); if (!b) return; const cols = boardCols(); b.querySelectorAll('.bi').forEach(bi => layoutItem(bi, cols)); }
 // photos finishing loading or the window changing size: refit the cards
 const boardRO = new ResizeObserver(es => { if (!$('board')) return; if (es.some(x => x.target === $('board'))) layoutBoard(); else es.forEach(x => { const bi = x.target.closest('.bi'); if (bi) layoutItem(bi); }); });
-/* --- THE INTRO next to the newest post. ✕ folds it away and turns into ⌄ to bring it back; your browser remembers which. --- */
+/* --- THE INTRO (far-left column). ✕ folds it away and turns into ⌄ to bring it back. Nothing is saved: it's open again on every visit.
+       (The site keeps nothing in visitors' browsers: no cookies, no stored data. Only your own login is kept, by Supabase.) --- */
 const ICON_X = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_DOWN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
-let introHidden = false; try { introHidden = localStorage.getItem('introHidden') === '1'; } catch (x) {}
+let introHidden = false;
 function drawIntro() {
   $('intro').hidden = introHidden; $('introx').innerHTML = introHidden ? ICON_DOWN : ICON_X;
   $('introx').title = introHidden ? 'Show the intro' : 'Hide'; $('introx').setAttribute('aria-label', introHidden ? 'Show the intro' : 'Hide the intro');
@@ -725,7 +726,7 @@ document.addEventListener('click', ev => {
   else if (a === 'rmI') { removePic(draft.imgs[+v].key); draft.imgs.splice(+v, 1); drawDraft(); }   // also takes it out of the text
   else if (a === 'pin') pinToggle(+v);
   else if (a === 'sortBy') { sortBy = v; render(); }
-  else if (a === 'intro') { introHidden = !introHidden; try { localStorage.setItem('introHidden', introHidden ? '1' : '0'); } catch (x) {} drawIntro(); }
+  else if (a === 'intro') { introHidden = !introHidden; drawIntro(); }
   else if (a === 'sortDir') { sortDir = sortDir === 'desc' ? 'asc' : 'desc'; render(); }
   else if (a === 'edit') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); }
   else if (a === 'link') copyLink(v);
