@@ -853,3 +853,21 @@ textarea{
 .mtitle{margin:0;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--acc)}
 .arts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
 .arts .th{height:110px;cursor:default}
+
+/* ===== STATS PAGE: plain tables ===== */
+#pgStats{max-width:900px;margin:0 auto}
+#pgStats h2{margin:6px 0 12px}
+#pgStats h2.sth{margin-top:36px;padding-top:14px;border-top:1px solid var(--line)}
+#pgStats h3{margin:22px 0 6px}
+.sts{width:100%;border-collapse:collapse;font-size:13px}
+.sts th,.sts td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.sts thead th{font-weight:600;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--mute)}
+.sts td:not(:first-child),.sts thead th:not(:first-child){text-align:right}
+.sts td:first-child{color:var(--ink)}
+.sheet{max-width:460px}
+.sheet th{font-weight:400;color:var(--mute);width:55%}
+.sheet td{text-align:right}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0 28px}
+.statslink{display:block;margin-top:14px;font-size:13px;text-decoration:none;color:var(--acc)}
+.statslink:hover{text-decoration:underline}
+.sts.lib td,.sts.lib thead th{text-align:left}   /* the library lists words, not numbers */

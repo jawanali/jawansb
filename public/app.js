@@ -121,7 +121,7 @@ async function doLogin() {
 /* --- MATH: EXP = minutes. QoL = star average weighted by minutes. --- */
 const agg = l => { const exp = l.reduce((a, e) => a + e.minutes, 0); return {exp, n: l.length, qol: exp ? l.reduce((a, e) => a + e.rating * e.minutes, 0) / exp : 0}; };
 const stars = r => `<span>${[1, 2, 3, 4, 5].map(i => `<span class="st" data-i="${i}"><i style="width:${Math.max(0, Math.min(1, r - i + 1)) * 100}%">★</i>★</span>`).join('')}</span>`;
-const dur = m => (m >= 60 ? Math.floor(m / 60) + 'h ' : '') + (m % 60 ? m % 60 + 'm' : (m >= 60 ? '' : '0m'));
+const dur = m => ((m >= 60 ? Math.floor(m / 60) + 'h ' : '') + (m % 60 ? m % 60 + 'm' : (m >= 60 ? '' : '0m'))).trim();   // 7h, 1h 30m, 45m
 const imgSrc = s => /^(data:|blob:|http)/.test(s) || !sb ? s : sb.storage.from('photos').getPublicUrl(s).data.publicUrl;
 const cmp = (a, b) => {
   const k = {date: e => e.start, exp: e => e.minutes, rating: e => e.rating}[sortBy], x = k(a), y = k(b);
@@ -325,14 +325,15 @@ function render() {
   // page switching + theme
   document.documentElement.dataset.page = page === 'blog' ? 'blog' : page === 'port' ? 'port' : 'exp';   // each page's colors
   const list = page === 'exp' || page === 'blog';   // the two pages with a board
-  $('pgList').hidden = !list; $('pgSet').hidden = page !== 'set'; $('pgPort').hidden = page !== 'port';
+  $('pgList').hidden = !list; $('pgSet').hidden = page !== 'set'; $('pgPort').hidden = page !== 'port'; $('pgStats').hidden = page !== 'stats';
   drawIntro();
   $('fab').hidden = !list || !owner; $('gear').hidden = !owner; $('status').hidden = !owner; $('status').textContent = 'Owner mode'; $('lock').textContent = owner ? 'Log out' : 'Owner login'; $('fab').textContent = page === 'blog' ? '+ Blog' : '+ Log';
-  $('nvP').classList.toggle('cur', page === 'port'); $('nvE').classList.toggle('cur', page === 'exp' || page === 'set'); $('nvB').classList.toggle('cur', page === 'blog');
+  $('nvP').classList.toggle('cur', page === 'port'); $('nvE').classList.toggle('cur', page === 'exp' || page === 'set' || page === 'stats'); $('nvB').classList.toggle('cur', page === 'blog');
   // top cards show the filtered numbers while a filter is on
   $('totExp').textContent = sh.exp.toLocaleString(); $('totQ').textContent = sh.n ? sh.qol.toFixed(2) : '—'; $('totN').textContent = sh.n;
   $('lblExp').textContent = filtered ? 'FILTERED EXP' : 'TOTAL EXP'; $('lblQ').textContent = filtered ? 'FILTERED QoL' : 'QUALITY OF LIFE'; $('lblN').textContent = filtered ? 'MATCHING' : 'EXPERIENCES';
   $('side').hidden = page !== 'exp';   // stats and filters only on the EXP page
+  $('statsLink').hidden = !owner;
   $('statsBox').classList.toggle('hot', filtered);
   $('fcount').textContent = filtered ? ' · ' + KINDS.reduce((n, [k]) => n + sel[k].size, 0) + ' active' : '';
   // filter buttons, colored like their tags, with each tag's own EXP and QoL
@@ -369,6 +370,7 @@ function render() {
     }
   }
   if (page === 'set') renderSet();
+  if (page === 'stats') renderStats();
 }
 /* --- FILTER MENU: slides open and shut instead of snapping. The search box hides tags that don't match what you type. --- */
 function fsOpen(want) {
@@ -387,6 +389,63 @@ function tagSearch() {
   document.querySelectorAll('#tags [data-act="flt"]').forEach(b => b.hidden = !!q && !b.dataset.v.toLowerCase().includes(q));
 }
 $('tq').addEventListener('input', tagSearch);
+/* --- STATS (/stats): a plain stat sheet from your experiences and their movie / music metadata. Pick All time or one year.
+       Visitors who find this page only see stats from public entries (private ones never reach their browser). --- */
+let statsYear = 'all';
+const sumMin = l => l.reduce((a, e) => a + (e.minutes || 0), 0);
+const hrs = m => (m / 60).toFixed(1);
+const avgR = l => { const r = l.filter(e => e.rating); return r.length ? (r.reduce((a, e) => a + e.rating, 0) / r.length).toFixed(2) : '—'; };
+const qolOf = l => { const a = agg(l); return a.exp ? a.qol.toFixed(2) : '—'; };
+const yearOf = e => String(new Date(e.start).getFullYear());
+const isA = (e, g) => tagsOf(e, 'types').some(t => META[g].match.test(t.trim()));   // is this experience a movie / music?
+// group experiences by name (an experience with several names counts once under each), biggest first
+function tally(list, namesOf) {
+  const m = new Map();
+  list.forEach(e => new Set(namesOf(e).map(n => String(n).trim()).filter(Boolean)).forEach(n => {
+    const k = key(n); if (!m.has(k)) m.set(k, {name: n, list: []}); m.get(k).list.push(e);
+  }));
+  return [...m.values()].sort((a, b) => b.list.length - a.list.length || sumMin(b.list) - sumMin(a.list) || a.name.localeCompare(b.name));
+}
+const table = (head, rows, cls = '') => rows.length ? `<table class="sts ${cls}"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<p class="mute">Nothing yet.</p>';
+const tallyTable = (label, list, namesOf, limit = 15) => {
+  const t = tally(list, namesOf);
+  return table([label, 'Times', 'Hours', 'Avg ★'], t.slice(0, limit).map(x => [esc(x.name), x.list.length, hrs(sumMin(x.list)), avgR(x.list)])) + (t.length > limit ? `<p class="mute">+ ${t.length - limit} more</p>` : '');
+};
+const sheet = rows => `<table class="sts sheet"><tbody>${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</tbody></table>`;
+const decade = y => /^\d{4}/.test(y) ? y.slice(0, 3) + '0s' : y;
+function renderStats() {
+  const everything = ents().sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+  const years = [...new Set(everything.map(yearOf))].sort().reverse();
+  if (statsYear !== 'all' && !years.includes(statsYear)) statsYear = 'all';
+  const L = statsYear === 'all' ? everything : everything.filter(e => yearOf(e) === statsYear);
+  const pick = (v, l) => `<button class="tag ${statsYear === v ? 'on' : ''}" data-act="syear" data-v="${v}">${l}</button>`;
+  const longest = L.reduce((a, e) => !a || e.minutes > a.minutes ? e : a, null), topType = tally(L, e => tagsOf(e, 'types'))[0];
+  const when = e => new Date(e.start).toLocaleDateString([], {month: 'short', day: 'numeric', year: 'numeric'});
+  let h = `<h2>Stats</h2><div class="tl srt">${pick('all', 'All time')}${years.map(y => pick(y, y)).join('')}</div>`;
+  h += `<h3>OVERVIEW</h3>` + sheet([
+    ['Experiences', L.length], ['Hours', hrs(sumMin(L)) + ` <span class="mute">(${sumMin(L).toLocaleString()} EXP)</span>`], ['Average ★', avgR(L)], ['Quality of life', qolOf(L)],
+    ['Days with an entry', new Set(L.map(e => new Date(e.start).toDateString())).size],
+    ['Longest', longest ? `${esc(longest.title)} <span class="mute">(${dur(longest.minutes)})</span>` : '—'],
+    ['Most-logged type', topType ? `${esc(topType.name)} <span class="mute">(${topType.list.length})</span>` : '—']]);
+  if (statsYear === 'all') h += `<h3>BY YEAR</h3>` + table(['Year', 'Experiences', 'Hours', 'Avg ★', 'QoL'], years.map(y => { const l = L.filter(e => yearOf(e) === y); return [y, l.length, hrs(sumMin(l)), avgR(l), qolOf(l)]; }));
+  else h += `<h3>BY MONTH</h3>` + table(['Month', 'Experiences', 'Hours', 'Avg ★', 'QoL'], [...Array(12).keys()].map(i => [i, L.filter(e => new Date(e.start).getMonth() === i)]).filter(([, l]) => l.length)
+    .map(([i, l]) => [new Date(2000, i, 1).toLocaleString([], {month: 'long'}), l.length, hrs(sumMin(l)), avgR(l), qolOf(l)]));
+  h += `<h3>TYPES</h3>` + tallyTable('Type', L, e => tagsOf(e, 'types'));
+  h += `<h3>PEOPLE</h3>` + tallyTable('Person', L, e => tagsOf(e, 'people'));
+  h += `<h3>LOCATIONS</h3>` + tallyTable('Location', L, e => tagsOf(e, 'places'));
+  for (const [g, who, whoLabel, noun] of [['movie', 'director', 'Director', 'Movies'], ['music', 'artist', 'Artist', 'Music']]) {
+    const M = L.filter(e => isA(e, g)), f = k => e => tagsOf(e, g + '.' + k);
+    h += `<h2 class="sth">${noun}</h2>`;
+    if (!M.length) { h += `<p class="mute">No ${noun.toLowerCase()} logged${statsYear === 'all' ? '' : ' in ' + statsYear} yet.</p>`; continue; }
+    h += sheet([[g === 'movie' ? 'Watched' : 'Listened', M.length], [g === 'movie' ? 'Different films' : 'Different titles', new Set(M.map(e => key(e.title || ''))).size],
+      ['Hours', hrs(sumMin(M))], ['Average ★', avgR(M)]]);
+    h += `<div class="sgrid"><div><h3>${whoLabel.toUpperCase()}S</h3>${tallyTable(whoLabel, M, f(who), 10)}</div><div><h3>GENRES</h3>${tallyTable('Genre', M, f('genre'), 10)}</div>
+      <div><h3>COUNTRIES</h3>${tallyTable('Country', M, f('country'), 10)}</div><div><h3>DECADES</h3>${tallyTable('Decade', M, e => f('year')(e).map(decade), 10)}</div></div>`;
+    h += `<h3>LIBRARY</h3>` + table(['Title', 'When', '★', 'Year', whoLabel, 'Genre', 'Country'],
+      [...M].reverse().map(e => [esc(e.title || ''), when(e), e.rating || '—', ...['year', who, 'genre', 'country'].map(k => esc(f(k)(e).join(', ')) || '<span class="mute">—</span>')]), 'lib');
+  }
+  $('pgStats').innerHTML = h;
+}
 function renderSet() {
   const E = ents();
   const st = settings();
@@ -754,7 +813,7 @@ async function save(asDraft) {
        Old links like /#e-ID or /#b-ID still work. route() reads the address bar; nav() changes it without reloading. --- */
 function route() {
   const [p, n] = location.pathname.split('/').filter(Boolean), h = location.hash.slice(1);
-  page = p === 'blog' ? 'blog' : p === 'exp' ? 'exp' : p === 'settings' ? 'set' : 'port'; focus = n || null;   // anything else: Strictly Business
+  page = p === 'blog' ? 'blog' : p === 'exp' ? 'exp' : p === 'settings' ? 'set' : p === 'stats' ? 'stats' : 'port'; focus = n || null;   // anything else: Strictly Business
   if (/^[eb]-/.test(h)) { page = h[0] === 'b' ? 'blog' : 'exp'; focus = h.slice(2); }
   else if (p !== 'strictlybusiness' && page === 'port') history.replaceState(null, '', '/strictlybusiness');
   render();
@@ -800,6 +859,7 @@ document.addEventListener('click', ev => {
   else if (a === 'sortBy') { sortBy = v; render(); }
   else if (a === 'saveintro') saveSettings({introTitle: $('sIntroT').value.trim() || undefined, intro: $('sIntro').value.trim() || undefined}).then(ok => ok && flash('Intro saved'));
   else if (a === 'resetintro') saveSettings({introTitle: undefined, intro: undefined}).then(ok => ok && flash('Intro reset to the original'));
+  else if (a === 'syear') { statsYear = v; renderStats(); }
   else if (a === 'intro') { introHidden = !introHidden; drawIntro(); }
   else if (a === 'sortDir') { sortDir = sortDir === 'desc' ? 'asc' : 'desc'; render(); }
   else if (a === 'edit') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); }
