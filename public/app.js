@@ -711,13 +711,14 @@ async function save(asDraft) {
   $('modal').hidden = true;
 }
 
-/* --- ADDRESSES: /exp, /blog and /portfolio are the pages, /exp/3 or /blog/3 opens item number 3, /settings is tag colors.
+/* --- ADDRESSES: /strictlybusiness (the home page), /exp and /blog are the pages, /exp/3 or /blog/3 opens item number 3,
+       /settings is tag colors and the intro. The bare address and the old /portfolio go to /strictlybusiness.
        Old links like /#e-ID or /#b-ID still work. route() reads the address bar; nav() changes it without reloading. --- */
 function route() {
   const [p, n] = location.pathname.split('/').filter(Boolean), h = location.hash.slice(1);
-  page = p === 'blog' ? 'blog' : p === 'portfolio' ? 'port' : p === 'settings' ? 'set' : 'exp'; focus = n || null;
+  page = p === 'blog' ? 'blog' : p === 'exp' ? 'exp' : p === 'settings' ? 'set' : 'port'; focus = n || null;   // anything else: Strictly Business
   if (/^[eb]-/.test(h)) { page = h[0] === 'b' ? 'blog' : 'exp'; focus = h.slice(2); }
-  else if (!p) history.replaceState(null, '', '/exp');
+  else if (p !== 'strictlybusiness' && page === 'port') history.replaceState(null, '', '/strictlybusiness');
   render();
 }
 const nav = path => { history.pushState(null, '', path); route(); scrollTo(0, 0); };

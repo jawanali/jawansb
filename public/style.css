@@ -17,7 +17,7 @@
  padding-bottom:env(safe-area-inset-bottom,0px)
 }
 
-/* the Portfolio page: all black, white text */
+/* the Strictly Business page: all black, white text */
 :root[data-page="port"]{
   --bg:#000;--card:#111;--panel:#111;--ink:#fff;--mute:#a8a8a8;--line:#2a2a2a;--acc:#fff;--on:#000
 }
@@ -92,7 +92,7 @@ body{
   .topnav .hr{grid-column:1;grid-row:1}
 }
 
-/* ===== FOLDER TABS (PORTFOLIO / EXP / BLOG) =====
+/* ===== FOLDER TABS (STRICTLY BUSINESS / EXP / BLOG) =====
    Each tab's outline is drawn by ::before, tilted back slightly so it narrows toward the top like an old file-folder tab.
    It has a border on the top and sides only. The front tab is taller and brighter, with an accent line along its top. */
 .tabs{
@@ -830,10 +830,10 @@ textarea{
 .introx:hover{opacity:1;color:var(--ink)}
 .intro p{margin:0;font-size:13px;line-height:1.55;color:var(--mute)}
 .intro a{color:inherit}
-/* ===== PORTFOLIO (for now) ===== */
+/* ===== STRICTLY BUSINESS (for now) ===== */
 #pgPort{min-height:55vh;display:flex;align-items:center;justify-content:center}
 #pgPort[hidden]{display:none}
-.soon{margin:0;font-size:14px;color:var(--ink);text-align:center}   /* white on the black Portfolio page */
+.soon{margin:0;font-size:14px;color:var(--ink);text-align:center}   /* white on the black Strictly Business page */
 /* the Blog page's sort control in the right column */
 .bside{margin-top:6px}
 
