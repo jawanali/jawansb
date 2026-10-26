@@ -1,7 +1,7 @@
 /* THE NEWSLETTER: "Your Weekly Dose of Jawan".
    /newsletter        the signup page (anyone). The email goes to Resend via /api/subscribe; they get a "click to confirm" email.
-   /newsletter/write  the composer (you only): intro blurb, a featured EXP / blog post, then every new public EXP and blog post
-                      since the last issue, drawn as preview cards. "Schedule" hands the finished email to Resend, which sends it.
+   /newsletter/write  the composer (you only): intro blurb, then the EXPs / blog posts you pick, in your order, each drawn as an
+                      email card with its own look. "Schedule" hands the finished email to Resend, which sends it.
    Each issue is saved in Supabase as a private item (kind "issue"): its number, intro, feature, send time, and whether it's scheduled.
    This file loads before app.js and only defines things; app.js calls renderNews() and drawNlBar() from render(). */
 
@@ -34,17 +34,15 @@ const NL_DEFAULT = {
   card: '#3a435e', cardInk: '#cae2ff', cardLine: '#4a5573', star: '#2DD881', off: '#5f6b85', btn: '#cae2ff', btnInk: '#313E50',
   titleFont: 'georgia', headFont: 'georgia', bodyFont: 'georgia', smallFont: 'arial',
   titleSize: 32, headSize: 24, bodySize: 16, smallSize: 13,
-  cols: 2, tint: true, summary: true, rules: true, caps: true,
+  tint: true, summary: true, rules: true, caps: true,
   subject: 'Your Weekly Dose of Jawan - Issue {n}',
   preheader: '{intro}',
   kicker: 'Issue {n} · {date}',
   title: 'Your Weekly Dose of Jawan',
-  featured: 'Featured',
   expHeading: 'Jawan Experienced {count} {Things} This Week',
   expSummary: '+{exp} EXP · {time} · Quality of Life {qol}',
   quiet: 'A quiet week.',
-  blogHeading: 'On the Blog',
-  readMore: 'Read it on jawansb.com →',
+  readMore: 'Read it on jawansb.com →',   // under a card that shows its whole description
   footer: 'You’re getting this because you signed up at jawansb.com/newsletter. Reply to this email to write back to me.',
   unsub: 'Unsubscribe',
   confirmSubject: 'Confirm: Your Weekly Dose of Jawan',
@@ -117,14 +115,26 @@ function nlRich(h, x, fg) {   // formatted text from the editor, made email-safe
 }
 const nlChip = (k, n, d) => { const b = tcol(k, n); return `<span style="display:inline-block;background:${b};color:${ink(b)};font:12px/1.4 ${nlFont(d.smallFont)};padding:2px 7px;margin:0 4px 4px 0">${esc(n)}</span>`; };
 const nlStars = (r, on, off) => `<span style="color:${on};letter-spacing:2px">${'★'.repeat(Math.floor(r))}${r % 1 ? '½' : ''}</span><span style="color:${off};letter-spacing:2px">${'★'.repeat(5 - Math.ceil(r))}</span>`;
-/* one card. show = which parts, order = their order (both from the card's own preview settings unless the feature sets them),
-   full = the whole description with its formatting (the feature can have that); otherwise a short plain-text taste of it */
-function nlCard(x, o, d) {
+/* EMAIL CARDS are their own thing, separate from the website's preview cards: each item in an issue keeps its own email look
+   {id, show, order, img, imgH, c, h, full}: which parts show and in what order, which photo and how tall, how wide (c = columns
+   out of 6), how tall the card is (h, or automatic), and whether the description is shown whole with its formatting.
+   A new item starts from its website preview card's settings, then the two go their own ways. */
+const NL_W = 568, NL_GAP = 8, NL_COLS = 6;   // the email's width, the space between cards, and how many columns it's split into
+const nlSpanW = c => Math.round(c * (NL_W - (NL_COLS - 1) * NL_GAP) / NL_COLS + (c - 1) * NL_GAP);   // a card's width in pixels
+const NL_WIDTHS = {2: 'One-third', 3: 'Half', 4: 'Two-thirds', 5: 'Five-sixths', 6: 'Full'};
+const nlNewItem = x => ({id: x.id, show: [...new Set(['title', ...(x.pvShow || PV_DEFAULT)])], order: [...(x.pvOrder || orderOf(x))], img: x.pvImg || null, imgH: null, c: 3, h: null, full: false});
+// edit = drawn in the email-look editor: ⠿ handles on the parts, a corner to size the card and one to size the photo
+function nlCard(x, o, d, edit) {
   const ent = !x.kind, tbg = ent && d.tint ? tintBg(x) : null, bg = tbg || d.card, fg = tbg ? ink(tbg) : d.cardInk, mute = blend(bg, fg, .65), url = itemUrl(x);
   const S = nlFont(d.smallFont), B = nlFont(d.bodyFont), ss = d.smallSize;
-  const show = o.show || x.pvShow || PV_DEFAULT, order = o.order || x.pvOrder || orderOf(x), full = !!o.full;
+  const show = o.show || PV_DEFAULT, order = o.order || orderOf(x), full = !!o.full;
   const small = `font:${ss}px/1.5 ${S};color:${mute};margin:0 0 6px`;
-  const pic = (() => { const l = picsOf(x), p = l.find(q => q.key === (o.img || x.pvImg)) || l[0]; return p ? `<img src="${esc(p.src)}" alt="" width="100%" style="display:block;width:100%;height:auto;border:0;margin:6px 0">` : ''; })();
+  const pic = (() => {
+    const l = picsOf(x), p = l.find(q => q.key === o.img) || l[0]; if (!p) return '';
+    const img = o.imgH ? `<img src="${esc(p.src)}" alt="" height="${o.imgH}" style="display:block;height:${o.imgH}px;width:auto;max-width:100%;border:0;margin:6px 0">`
+      : `<img src="${esc(p.src)}" alt="" width="100%" style="display:block;width:100%;height:auto;border:0;margin:6px 0">`;
+    return edit ? `<span class="nlrz">${img}<i class="nlrzh" title="Drag to size the photo"></i></span>` : img;
+  })();
   const tags = (k, w) => tagsOf(x, k).length ? `<span style="color:${mute}">${w}</span> ${tagsOf(x, k).map(n => esc(canon(k, n))).join(', ')} ` : '';
   const s = new Date(ent ? x.start : x.created);
   const parts = {
@@ -137,35 +147,45 @@ function nlCard(x, o, d) {
       : (() => { const t = nlShort(x.desc || x.body || nlPlain(x.html)); return t ? `<div style="font:${d.bodySize - 1}px/1.5 ${B};margin:0 0 6px">${esc(t)}</div>` : ''; })(),
     photos: pic
   };
-  const inner = order.filter(k => show.includes(k) && parts[k]).map(k => parts[k]).join('');
-  const box = `background:${bg};color:${fg};border:1px solid ${d.cardLine};padding:14px 16px`;
-  // a preview card is one big link to the post; the full feature has its own links inside, so it gets a "read it" link instead
-  return full ? `<div style="${box}">${inner}${d.readMore ? `<div style="font:${ss}px ${S};margin-top:8px"><a href="${url}" style="color:${fg}">${esc(d.readMore)}</a></div>` : ''}</div>`
-    : `<a href="${url}" style="display:block;text-decoration:none;color:${fg};${box}">${inner}</a>`;
+  const inner = order.filter(k => show.includes(k) && parts[k]).map(k => edit ? `<div class="pp" data-k="${k}"><span class="ppg" title="Drag to move">⠿</span>${parts[k]}</div>` : parts[k]).join('');
+  const more = full && d.readMore ? `<div style="font:${ss}px ${S};margin-top:8px"><a href="${url}" style="color:${fg}">${esc(d.readMore)}</a></div>` : '';
+  // h = the card's whole height; email boxes measure height inside the padding (14px top and bottom) and border, so take those off
+  const box = `background:${bg};color:${fg};border:1px solid ${d.cardLine};padding:14px 16px${o.h ? `;height:${o.h - 30}px;overflow:hidden` : ''}`;
+  if (edit) return `<div class="nlecard" style="${box};width:${nlSpanW(o.c || 3) - 34}px">${inner}${more}<i class="nlcz" title="Drag to size the card"></i></div>`;
+  // a short card is one big link to the post; a card with the whole description has links inside it, so it gets a "read it" link instead
+  return full ? `<div class="nlbox" style="${box}">${inner}${more}</div>` : `<a class="nlbox" href="${url}" style="display:block;text-decoration:none;color:${fg};${box}">${inner}</a>`;
 }
-// preview cards two to a row (one to a row on phones), like a small version of the board; or one to a row everywhere
-const nlGrid = (l, d) => d.cols === 1 ? l.map(x => `<div style="margin:0 0 10px">${nlCard(x, {}, d)}</div>`).join('')
-  : `<div style="font-size:0;line-height:0">${l.map((x, i) => `<div class="nlcol" style="display:inline-block;vertical-align:top;width:100%;max-width:280px;margin:0 ${i % 2 ? 0 : 8}px 10px 0;font-size:16px;line-height:1.45;text-align:left">${nlCard(x, {}, d)}</div>`).join('')}</div>`;
+// the cards side by side, each at its own width, wrapping to a new row when the next one doesn't fit (one per row on phones)
+function nlGrid(list, d) {
+  const cs = list.map(({o}) => Math.min(NL_COLS, Math.max(2, o.c || 3)));
+  let used = 0;
+  return `<div style="font-size:0;line-height:0">${list.map(({x, o}, i) => {
+    if (used + cs[i] > NL_COLS) used = 0;
+    used += cs[i];
+    const end = i === list.length - 1 || used + cs[i + 1] > NL_COLS;   // last one in its row: no space after it
+    return `<div class="nlcol" style="display:inline-block;vertical-align:top;width:${nlSpanW(cs[i])}px;max-width:100%;margin:0 ${end ? 0 : NL_GAP}px 10px 0;font-size:16px;line-height:1.45;text-align:left">${nlCard(x, o, d)}</div>`;
+  }).join('')}</div>`;
+}
+// an issue's items, in order (issues saved before this had a single "feat" instead), skipping anything since deleted or made private
+const nlItemsOf = iss => iss.items || (iss.feat ? [{...iss.feat, img: iss.feat.img || null, c: 6, h: null}] : []);
+const nlShown = iss => nlItemsOf(iss).map(o => ({o, x: all.find(y => y.id === o.id)})).filter(({x}) => x && x.is_public && x.num);
 const nlH = (t, sub, d) => `<div style="margin:30px 0 12px;${d.rules ? `border-top:1px solid ${d.line};padding-top:18px` : ''}">${t ? `<div style="font:${d.headSize}px/1.25 ${nlFont(d.headFont)}">${esc(t)}</div>` : ''}${sub ? `<div style="font:${d.smallSize}px ${nlFont(d.smallFont)};color:${d.mute};margin-top:4px">${esc(sub)}</div>` : ''}</div>`;
 const nlLabel = (t, d, m) => t ? `<div style="font:${d.smallSize - 1}px ${nlFont(d.smallFont)};letter-spacing:2px;color:${d.mute};${d.caps ? 'text-transform:uppercase;' : ''}margin:${m}">${esc(t)}</div>` : '';
 function buildEmail(iss, d = nlD()) {
-  const w = nlWindow(iss), feat = iss.feat && all.find(x => x.id === iss.feat.id), n = w.exps.length, sum = sumMin(w.exps);
-  const exps = w.exps.filter(x => !feat || x.id !== feat.id), blogs = w.blogs.filter(x => !feat || x.id !== feat.id);
+  const w = nlWindow(iss), list = nlShown(iss), n = w.exps.length, sum = sumMin(w.exps);   // the heading counts every new public EXP, even ones left out
   const v = {n: iss.num, count: n, things: n === 1 ? 'thing' : 'things', Things: n === 1 ? 'Thing' : 'Things', exp: sum.toLocaleString(), time: dur(sum), qol: qolOf(w.exps),
     date: new Date(iss.sendAt).toLocaleDateString('en-US', {weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'}), intro: nlShort(nlPlain(iss.intro))};
   const F = t => nlFill(t, v).trim(), subject = F(d.subject), intro = nlRich(iss.intro, null, d.link);
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${esc(subject)}</title>${nlFontLink(d)}
-<style>@media (max-width:620px){.nlcol{max-width:100%!important;margin-right:0!important}}</style></head>
+<style>@media (max-width:620px){.nlcol{width:100%!important;margin-right:0!important}.nlbox{height:auto!important}}</style></head>
 <body style="margin:0;padding:0;background:${d.bg}">
 <div style="display:none;max-height:0;overflow:hidden">${esc(F(d.preheader) || F(d.expHeading) || subject)}</div>
 <div style="background:${d.bg};padding:28px 0 36px"><div style="max-width:568px;margin:0 auto;padding:0 16px;color:${d.ink};font:${d.bodySize}px/1.55 ${nlFont(d.bodyFont)}">
 ${nlLabel(F(d.kicker), d, '0')}
 ${F(d.title) ? `<div style="font:${d.titleSize}px/1.15 ${nlFont(d.titleFont)};margin:6px 0 18px"><a href="${NL_SITE}/exp" style="color:${d.ink};text-decoration:none">${esc(F(d.title))}</a></div>` : '<div style="height:12px"></div>'}
 ${intro ? `<div style="margin:0 0 8px">${intro}</div>` : ''}
-${feat ? nlLabel(F(d.featured), d, '26px 0 8px') + (F(d.featured) ? '' : '<div style="height:20px"></div>') + nlCard(feat, iss.feat, d) : ''}
 ${nlH(F(d.expHeading), n && d.summary ? F(d.expSummary) : '', d)}
-${exps.length ? nlGrid(exps, d) : n || !F(d.quiet) ? '' : `<p style="margin:0;color:${d.mute}">${esc(F(d.quiet))}</p>`}
-${blogs.length ? nlH(F(d.blogHeading), '', d) + nlGrid(blogs, d) : ''}
+${list.length ? nlGrid(list, d) : n || !F(d.quiet) ? '' : `<p style="margin:0;color:${d.mute}">${esc(F(d.quiet))}</p>`}
 <div style="margin-top:34px;${d.rules ? `border-top:1px solid ${d.line};padding-top:14px;` : ''}font:${d.smallSize - 1}px/1.6 ${nlFont(d.smallFont)};color:${d.mute}">
 ${F(d.footer) ? nlWords(F(d.footer), d.mute) + '<br>' : ''}<a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color:${d.mute}">${esc(d.unsub)}</a></div>
 </div></div></body></html>`;
@@ -203,51 +223,117 @@ function renderNews() {
   nlView = id; buildWrite(iss, id);
 }
 function buildWrite(iss, id) {
-  nl = iss ? JSON.parse(JSON.stringify(iss)) : {id, kind: 'issue', num: +id.split('-')[1], intro: '', feat: null, sendAt: nextMonday().toISOString(), status: 'draft'};
-  const pick = l => l.filter(x => x.is_public && x.num).sort((a, b) => (loggedAt(b) || '').localeCompare(loggedAt(a) || ''))
-    .map(x => `<option value="${x.id}"${nl.feat && nl.feat.id === x.id ? ' selected' : ''}>${x.kind === 'post' ? 'Blog' : 'EXP'} ${x.num} · ${esc(x.title)}</option>`).join('');
+  nl = iss ? JSON.parse(JSON.stringify(iss)) : {id, kind: 'issue', num: +id.split('-')[1], intro: '', sendAt: nextMonday().toISOString(), status: 'draft'};
+  nl.items = nlItemsOf(nl); delete nl.feat; nlOpen = null;
   $('pgNews').innerHTML = `<button class="link" data-act="go" data-v="newsletter">← Signup page</button> <button class="link" data-act="go" data-v="newsletter/design">Change the design →</button>
     <h2>Issue ${nl.num}</h2><p class="mute" id="nlState"></p>
     <label>Subject</label><p class="nlsubj" id="nlSubj"></p>
     <label>Send time</label><input type="datetime-local" id="nlAt" value="${loc(new Date(nl.sendAt))}">
     <label>Intro blurb</label><div id="nlEd"></div>
-    <label>Feature</label><select id="nlFeat"><option value="">No feature</option><optgroup label="EXP">${pick(ents())}</optgroup><optgroup label="Blog">${pick(posts())}</optgroup><optgroup label="Strictly Business"><option disabled>No projects yet</option></optgroup></select>
-    <div id="nlFeatOpts"></div>
+    <label>In this email</label><p class="mute nlhint">Drag ⠿ to put them in any order. “Email look” changes how a card looks in the email only; the website keeps its own preview cards.</p>
+    <div id="nlItems"></div>
+    <label>Add to the email</label><div id="nlAdd"></div>
     <p class="mute" id="nlAuto"></p>
     <div class="btns nlbtns"><button class="go2" data-act="nlsave">SAVE DRAFT</button><button class="go2" data-act="nltest">SEND ME A TEST</button><button class="go" id="nlSched" data-act="nlsched">SCHEDULE</button></div>
     <button class="link" id="nlUn" data-act="nlunsched" hidden>Cancel the scheduled send</button>
     <label>Preview</label><iframe id="nlPv" class="nlpv" sandbox="allow-same-origin allow-popups" title="Email preview"></iframe>`;
-  nlQ = window.Quill ? new Quill('#nlEd', {theme: 'snow', placeholder: 'This week…', modules: {toolbar: [
+  nlQ = window.Quill ? new Quill('#nlEd', {theme: 'snow', modules: {toolbar: [
     [{font: [false, 'serif', 'typewriter', 'display', 'mono']}, {size: ['small', false, 'large', 'huge']}],
     ['bold', 'italic', 'underline', 'strike'], [{list: 'ordered'}, {list: 'bullet'}], ['blockquote', 'link'], ['clean']]}}) : null;
   if (nlQ) { if (nl.intro) nlQ.clipboard.dangerouslyPasteHTML(nl.intro); nlQ.history.clear(); nlQ.on('text-change', () => { nl.intro = nlQ.getLength() > 1 ? nlQ.root.innerHTML : ''; nlPreview(); }); }
   $('nlPv').addEventListener('load', () => { const d = $('nlPv').contentDocument; if (d) $('nlPv').style.height = d.documentElement.scrollHeight + 'px'; });
-  nlFeatOpts(); nlStatus(); nlPreview();
+  nlDrawItems(); nlStatus(); nlPreview();
 }
-// how the feature is shown: which parts, in what order, which photo, short or full description
-function nlFeatOpts() {
-  const x = nl.feat && all.find(y => y.id === nl.feat.id), box = $('nlFeatOpts');
-  if (!x) { box.innerHTML = ''; return; }
-  const f = nl.feat, names = Object.fromEntries(x.kind === 'post' ? NL_BLOG_PARTS : PV_PARTS);
-  const order = f.order.filter(k => names[k]).concat(Object.keys(names).filter(k => !f.order.includes(k)));
-  box.innerHTML = `<p class="mute">Tick what the feature shows, and use ↑ ↓ to put the parts in order.</p><div class="nlparts">${order.map((k, i) =>
-    `<div class="nlpart"><label class="chk"><input type="checkbox" data-nlpart="${k}"${f.show.includes(k) ? ' checked' : ''}> ${names[k]}</label>
-     <button class="ib" data-act="nlmove" data-v="${k}" data-k="-1" title="Move up"${i ? '' : ' disabled'}>↑</button><button class="ib" data-act="nlmove" data-v="${k}" data-k="1" title="Move down"${i < order.length - 1 ? '' : ' disabled'}>↓</button></div>`).join('')}</div>
-    <label class="chk"><input type="checkbox" id="nlFull"${f.full ? ' checked' : ''}> Whole description, with its formatting (otherwise a short taste)</label>
-    ${picsOf(x).length > 1 ? `<div class="nlpics"><span class="mute">Photo:</span>${picsOf(x).map(p => `<button class="nlpic${(f.img || x.pvImg || picsOf(x)[0].key) === p.key ? ' on' : ''}" data-act="nlimg" data-v="${esc(p.key)}"><img src="${esc(p.src)}" alt=""></button>`).join('')}</div>` : ''}`;
-  f.order = order;
+/* --- WHAT'S IN THE EMAIL: one list of EXPs, blog posts (and, once there are some, Strictly Business projects), in your order.
+       Nothing goes in unless you add it. New things since the last issue are offered first. --- */
+let nlOpen = null;   // the item whose email look is open for editing
+const nlKind = x => x.kind === 'post' ? 'Blog' : x.kind === 'project' ? 'Project' : 'EXP';
+const nlNewest = (a, b) => (loggedAt(b) || '').localeCompare(loggedAt(a) || '');
+const nlItem = id => nl.items.find(o => o.id === id);
+function nlDrawItems() {
+  const list = nlShown(nl), inIds = new Set(nl.items.map(o => o.id)), w = nlWindow(nl), fresh = [...w.exps, ...w.blogs].sort(nlNewest);
+  const day = x => new Date(loggedAt(x)).toLocaleDateString([], {month: 'short', day: 'numeric'});
+  $('nlItems').innerHTML = list.length ? list.map(({x}) => `<div class="nlitw" data-id="${x.id}"><div class="nlit${nlOpen === x.id ? ' on' : ''}"><span class="nlgrip" title="Drag to move">⠿</span><span class="nlkind">${nlKind(x)}</span><span class="nlt">${esc(x.title)}</span>
+      <button class="link" data-act="nllook" data-v="${x.id}">${nlOpen === x.id ? 'Done' : 'Email look'}</button><button class="ib" data-act="nlrm" data-v="${x.id}" title="Take it out of the email" aria-label="Take it out">✕</button></div>
+      ${nlOpen === x.id ? '<div class="nllook" id="nlLook"></div>' : ''}</div>`).join('')
+    : '<p class="mute nlnone">Nothing in this email yet. Add things below.</p>';
+  if (nlOpen) nlDrawLook();
+  const left = fresh.filter(x => !inIds.has(x.id));
+  const older = l => l.filter(x => x.is_public && x.num && !inIds.has(x.id) && !fresh.includes(x)).sort(nlNewest).map(x => `<option value="${x.id}">${nlKind(x)} ${x.num} · ${esc(x.title)}</option>`).join('');
+  $('nlAdd').innerHTML = `<p class="mute nlsub">New since the last issue</p>` + (left.length ? left.map(x => `<div class="nladd"><span class="nlkind">${nlKind(x)}</span><span class="nlt">${esc(x.title)}</span><span class="mute">${day(x)}</span><button class="link" data-act="nladd" data-v="${x.id}">+ Add</button></div>`).join('')
+      + (left.length > 1 ? `<button class="link nladdall" data-act="nladdall">+ Add all ${left.length}</button>` : '') : `<p class="mute">${fresh.length ? 'All added.' : 'Nothing new yet.'}</p>`)
+    + `<select id="nlOlder"><option value="">Add something older…</option><optgroup label="EXP">${older(ents())}</optgroup><optgroup label="Blog">${older(posts())}</optgroup><optgroup label="Strictly Business"><option disabled>No projects yet</option></optgroup></select>`;
 }
+// THE EMAIL-LOOK EDITOR: works like "Edit preview card" on the site, but only for this email
+function nlDrawLook() {
+  const o = nlItem(nlOpen), x = all.find(y => y.id === nlOpen), box = $('nlLook'); if (!o || !x || !box) return;
+  const d = nlD(), pics = picsOf(x), cur = (pics.find(p => p.key === o.img) || pics[0] || {}).key;
+  box.innerHTML = `<p class="mute">Tick what the card shows and drag ⠿ on the card to put things in order. Drag the card’s bottom-right corner to size the card, and the photo’s corner to size the photo.</p>
+    <div class="pvparts">${(x.kind === 'post' ? NL_BLOG_PARTS : PV_PARTS).map(([k, l]) => `<label class="chk"><input type="checkbox" data-nlpart="${k}"${o.show.includes(k) ? ' checked' : ''}> ${l}</label>`).join('')}</div>
+    <label class="chk"><input type="checkbox" data-nlfull${o.full ? ' checked' : ''}> Whole description, with its formatting (otherwise a short taste)</label>
+    ${pics.length > 1 ? `<div class="nlpics"><span class="mute">Photo:</span>${pics.map(p => `<button class="nlpic${cur === p.key ? ' on' : ''}" data-act="nlimg" data-v="${esc(p.key)}"><img src="${esc(p.src)}" alt=""></button>`).join('')}</div>` : ''}
+    <div class="nlstage" style="background:${d.bg}"><div class="nlrow" style="width:${NL_W}px">${nlCard(x, o, d, true)}</div></div>
+    <div class="pvfoot"><span class="mute" id="nlSize"></span><button class="link" data-act="nlauto">Automatic size</button></div>`;
+  nlSizeText(o);
+}
+const nlSizeText = o => { $('nlSize').textContent = `${NL_WIDTHS[o.c || 3]} width · ${o.h ? o.h + 'px tall' : 'automatic height'} · ${o.imgH ? 'photo ' + o.imgH + 'px tall' : 'photo fills the width'}`; };
 function nlStatus() {
   if (!$('nlState')) return;
   const w = nlWindow(nl), sch = nl.status === 'scheduled', d = t => new Date(t).toLocaleString([], {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
-  $('nlState').textContent = sch ? `Scheduled: goes out ${d(nl.sendAt)}. Change anything, then press Reschedule.` : `Draft. Covers what you’ve posted since ${d(w.from)}.`;
-  $('nlAuto').textContent = `Added automatically: ${w.exps.length} new public EXP${w.exps.length === 1 ? '' : 's'}` + (w.blogs.length ? ` and ${w.blogs.length} blog post${w.blogs.length === 1 ? '' : 's'}` : '') + ', as preview cards.';
+  $('nlState').textContent = sch ? `Scheduled: goes out ${d(nl.sendAt)}. Change anything, then press Reschedule.` : `Draft. “New” means posted since ${d(w.from)}.`;
+  $('nlAuto').textContent = `${nlShown(nl).length} in the email. The heading counts all ${w.exps.length} new public EXP${w.exps.length === 1 ? '' : 's'}, including any you leave out.`;
   $('nlSubj').textContent = buildEmail(nl).subject;
   $('nlSched').textContent = sch ? 'RESCHEDULE WITH CHANGES' : 'SCHEDULE'; $('nlUn').hidden = !sch;
 }
 const nlPreview = () => { clearTimeout(nlPvT); nlPvT = setTimeout(() => { if ($('nlPv') && nl) $('nlPv').srcdoc = buildEmail(nl).html; }, 250); };
+const nlChanged = () => { nlStatus(); nlPreview(); };
 // the parts of the issue that get saved (nothing else ends up in Supabase)
-const nlRecord = () => ({id: nl.id, kind: 'issue', is_public: false, num: nl.num, intro: nl.intro, feat: nl.feat, sendAt: nl.sendAt, status: nl.status, until: nl.until, bid: nl.bid, saved: new Date().toISOString()});
+const nlRecord = () => ({id: nl.id, kind: 'issue', is_public: false, num: nl.num, intro: nl.intro, items: nl.items, sendAt: nl.sendAt, status: nl.status, until: nl.until, bid: nl.bid, saved: new Date().toISOString()});
+/* --- DRAGGING in the composer: ⠿ on a list row moves it; on the email-look card, ⠿ moves a part, the card's corner sizes the card,
+       the photo's corner sizes the photo. Things move on screen while you drag and are saved into the issue when you let go. --- */
+let nlDrag = null;
+document.addEventListener('pointerdown', ev => {
+  const t = ev.target; if (!nl || !t.closest || !t.closest('#pgNews') || page !== 'write') return;
+  const card = t.closest('.nlecard');
+  if (t.closest('.nlgrip')) nlDrag = {k: 'item', el: t.closest('.nlitw')};
+  else if (t.closest('.ppg') && card) nlDrag = {k: 'part', el: t.closest('.pp'), card};
+  else if (t.classList.contains('nlcz')) nlDrag = {k: 'card', card, x0: ev.clientX, y0: ev.clientY, w0: card.offsetWidth, h0: card.offsetHeight};
+  else if (t.classList.contains('nlrzh')) { const img = t.previousElementSibling; nlDrag = {k: 'pic', img, y0: ev.clientY, h0: img.offsetHeight}; }
+  else return;
+  ev.preventDefault(); $('pgNews').setPointerCapture(ev.pointerId);
+  if (nlDrag.el) nlDrag.el.classList.add('dragging');
+});
+document.addEventListener('pointermove', ev => {
+  const g = nlDrag; if (!g) return;
+  if (g.k === 'item' || g.k === 'part') {   // the first one whose middle is below the pointer: the dragged one goes just before it
+    const box = g.k === 'item' ? $('nlItems') : g.card, sibs = [...box.querySelectorAll(g.k === 'item' ? ':scope > .nlitw' : ':scope > .pp')];
+    const next = sibs.find(x => x !== g.el && ev.clientY < x.getBoundingClientRect().top + x.offsetHeight / 2);
+    if (next) { if (g.el.nextElementSibling !== next) box.insertBefore(g.el, next); } else if (sibs.at(-1) !== g.el) sibs.at(-1).after(g.el);
+  } else if (g.k === 'card') {   // snap the width to the email's columns, the height to 10px steps
+    const want = g.w0 + ev.clientX - g.x0;
+    g.c = [2, 3, 4, 5, 6].reduce((a, c) => Math.abs(nlSpanW(c) - want) < Math.abs(nlSpanW(a) - want) ? c : a, 3);
+    g.h = Math.max(60, Math.round((g.h0 + ev.clientY - g.y0) / 10) * 10);
+    g.card.style.width = (nlSpanW(g.c) - 34) + 'px'; g.card.style.height = (g.h - 30) + 'px'; g.card.style.overflow = 'hidden';
+    $('nlSize').textContent = `${NL_WIDTHS[g.c]} width · ${g.h}px tall`;
+  } else if (g.k === 'pic') {
+    g.h = Math.max(40, Math.min(600, Math.round(g.h0 + ev.clientY - g.y0)));
+    g.img.style.height = g.h + 'px'; g.img.style.width = 'auto';
+  }
+});
+const nlDragEnd = () => {
+  const g = nlDrag; if (!g) return; nlDrag = null;
+  if (g.el) g.el.classList.remove('dragging');
+  if (g.k === 'item') { const ids = [...$('nlItems').querySelectorAll(':scope > .nlitw')].map(x => x.dataset.id); nl.items.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)); }
+  else {
+    const o = nlItem(nlOpen); if (!o) return;
+    if (g.k === 'part') { const ks = [...g.card.querySelectorAll(':scope > .pp')].map(x => x.dataset.k); o.order = [...ks, ...o.order.filter(k => !ks.includes(k))]; }
+    else if (g.k === 'card' && g.c) { o.c = g.c; o.h = g.h; }
+    else if (g.k === 'pic' && g.h) o.imgH = g.h;
+    nlDrawLook();
+  }
+  nlChanged();
+};
+document.addEventListener('pointerup', nlDragEnd); document.addEventListener('pointercancel', nlDragEnd);
 async function nlApi(path, body) {
   const s = (await sb.auth.getSession()).data.session;
   const r = await fetch('/api/' + path, {method: 'POST', headers: {'content-type': 'application/json', authorization: 'Bearer ' + (s ? s.access_token : '')}, body: JSON.stringify(body)});
@@ -273,8 +359,13 @@ function drawNlBar() {
 document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-act^="nl"]'); if (!b || !nl) return;
   const a = b.dataset.act, v = b.dataset.v;
-  if (a === 'nlmove') { const o = nl.feat.order, i = o.indexOf(v), j = i + +b.dataset.k; [o[i], o[j]] = [o[j], o[i]]; nlFeatOpts(); nlPreview(); }
-  else if (a === 'nlimg') { nl.feat.img = v; nlFeatOpts(); nlPreview(); }
+  const add = x => { if (x && !nlItem(x.id)) nl.items.push(nlNewItem(x)); };
+  if (a === 'nladd') { add(all.find(x => x.id === v)); nlDrawItems(); nlChanged(); }
+  else if (a === 'nladdall') { const w = nlWindow(nl); [...w.exps, ...w.blogs].sort(nlNewest).forEach(add); nlDrawItems(); nlChanged(); }
+  else if (a === 'nlrm') { nl.items = nl.items.filter(o => o.id !== v); if (nlOpen === v) nlOpen = null; nlDrawItems(); nlChanged(); }
+  else if (a === 'nllook') { nlOpen = nlOpen === v ? null : v; nlDrawItems(); }
+  else if (a === 'nlimg') { nlItem(nlOpen).img = v; nlDrawLook(); nlPreview(); }
+  else if (a === 'nlauto') { const o = nlItem(nlOpen); o.c = 3; o.h = null; nlDrawLook(); nlPreview(); }
   else if (a === 'nlsave') nlBusy(b, 'Saving…', async () => { if (await put(nlRecord())) flash('Issue ' + nl.num + ' saved'); });
   else if (a === 'nltest') nlBusy(b, 'Sending…', async () => { await nlApi('test', buildEmail(nl)); flash('Test sent to ' + OWNER_EMAIL + '. Check your inbox.'); });
   else if (a === 'nlsched') {
@@ -294,11 +385,12 @@ document.addEventListener('click', ev => {
     if (await put(nlRecord())) flash('Cancelled. Issue ' + nl.num + ' is a draft again.');
   });
 });
+document.addEventListener('click', ev => { if (ev.target.closest && ev.target.closest('.nlstage') && ev.target.closest('a')) ev.preventDefault(); }, true);
 document.addEventListener('change', ev => {
   const t = ev.target; if (!nl || !t.closest('#pgNews')) return;
-  if (t.id === 'nlFeat') { const x = all.find(y => y.id === t.value); nl.feat = x ? {id: x.id, show: [...new Set(['title', ...(x.pvShow || PV_DEFAULT)])], order: [...(x.pvOrder || orderOf(x))], full: false} : null; nlFeatOpts(); nlStatus(); }
-  else if (t.dataset.nlpart) { const s = new Set(nl.feat.show); t.checked ? s.add(t.dataset.nlpart) : s.delete(t.dataset.nlpart); nl.feat.show = [...s]; }
-  else if (t.id === 'nlFull') nl.feat.full = t.checked;
+  if (t.id === 'nlOlder') { const x = all.find(y => y.id === t.value); if (x && !nlItem(x.id)) nl.items.push(nlNewItem(x)); nlDrawItems(); nlStatus(); }
+  else if (t.dataset.nlpart) { const o = nlItem(nlOpen), k = t.dataset.nlpart; o.show = t.checked ? [...new Set([...o.show, k])] : o.show.filter(y => y !== k); if (!o.order.includes(k)) o.order.push(k); nlDrawLook(); }
+  else if ('nlfull' in t.dataset) { nlItem(nlOpen).full = t.checked; nlDrawLook(); }
   else if (t.id === 'nlAt') { const d = new Date(t.value); if (!isNaN(d)) nl.sendAt = d.toISOString(); }
   else return;
   nlPreview();
@@ -331,11 +423,11 @@ const NL_FORM = [
     ['card', 'Card background', 'c'], ['cardInk', 'Card text', 'c'], ['cardLine', 'Card border', 'c'], ['star', 'Stars', 'c'], ['off', 'Empty stars', 'c'], ['btn', 'Confirm button', 'c'], ['btnInk', 'Confirm button text', 'c']]],
   ['Fonts & sizes', [['titleFont', 'Big title', 'f'], ['titleSize', 'Big title size', 'n'], ['headFont', 'Headings & card titles', 'f'], ['headSize', 'Heading size', 'n'],
     ['bodyFont', 'Body text', 'f'], ['bodySize', 'Body size', 'n'], ['smallFont', 'Small text & labels', 'f'], ['smallSize', 'Small text size', 'n']]],
-  ['Layout', [['cols', 'Cards per row', 'cols'], ['tint', 'Tint EXP cards with their Type tag color', 'b'], ['summary', 'Show the EXP / QoL line under the heading', 'b'],
+  ['Layout', [['tint', 'Tint EXP cards with their Type tag color', 'b'], ['summary', 'Show the EXP / QoL line under the heading', 'b'],
     ['rules', 'Lines between sections', 'b'], ['caps', 'Small labels in CAPITALS', 'b']]],
   ['Weekly email words', [['subject', 'Subject line'], ['preheader', 'Preview line (the gray text inboxes show after the subject)'], ['kicker', 'Small line above the title'], ['title', 'Big title'],
-    ['featured', 'Label above the feature'], ['expHeading', 'EXP heading'], ['expSummary', 'EXP summary line'], ['quiet', 'When there are no new EXPs'], ['blogHeading', 'Blog heading'],
-    ['readMore', 'Link under the feature'], ['footer', 'Footer', 't'], ['unsub', 'Unsubscribe link']]],
+    ['expHeading', 'Heading above the cards'], ['expSummary', 'Summary line under it'], ['quiet', 'When there are no new EXPs'],
+    ['readMore', 'Link under a card showing its whole description'], ['footer', 'Footer', 't'], ['unsub', 'Unsubscribe link']]],
   ['Confirmation email', [['confirmSubject', 'Subject line'], ['confirmTitle', 'Title'], ['confirmBody', 'Message', 't'], ['confirmButton', 'Button'], ['confirmFine', 'Small print', 't']]],
   ['Signup page', [['signupTitle', 'Title'], ['signupBlurb', 'Blurb', 't'], ['signupPlaceholder', 'Hint inside the email box'], ['signupButton', 'Button'],
     ['signupCheck', 'After someone signs up'], ['signupDone', 'After they confirm'], ['signupFine', 'Small print', 't']]]
@@ -349,7 +441,6 @@ function nldField([k, label, t]) {
   const input = t === 'c' ? `<input type="color" data-nld="${k}" value="${esc(v)}">`
     : t === 'n' ? `<input type="number" min="8" max="72" data-nld="${k}" value="${v}">`
     : t === 'f' ? `<select data-nld="${k}">${NL_FONT_LIST.map(([f, n]) => `<option value="${f}"${v === f ? ' selected' : ''}>${n}</option>`).join('')}</select>`
-    : t === 'cols' ? `<select data-nld="${k}"><option value="2"${v === 2 ? ' selected' : ''}>Two (one on phones)</option><option value="1"${v === 1 ? ' selected' : ''}>One</option></select>`
     : t === 't' ? `<textarea rows="3" data-nld="${k}" placeholder="${dv}">${esc(v)}</textarea>` : `<input data-nld="${k}" value="${esc(v)}" placeholder="${dv}">`;
   return `<div class="nldrow nld-${t || 's'}"><label>${label}</label>${input}${reset}</div>`;
 }
@@ -371,8 +462,10 @@ function buildDesign(d = nlD()) {
 // the issue shown in the preview: the one you're writing, with stand-in text where it's still empty
 function nldSample() {
   const c = curIssue(), num = c ? c.num : Math.max(0, ...issues().map(i => i.num)) + 1;
-  const feat = (c && c.feat) || (() => { const x = ents().filter(e => e.is_public && e.num).sort((a, b) => b.start.localeCompare(a.start))[0]; return x ? {id: x.id, show: ['title', ...(x.pvShow || PV_DEFAULT)], order: x.pvOrder || orderOf(x)} : null; })();
-  return {...(c || {num, status: 'draft', sendAt: nextMonday().toISOString()}), feat, intro: (c && c.intro) || '<p>Your intro blurb for the week goes here. (Stand-in text, just for this preview.)</p>'};
+  const base = {...(c || {num, status: 'draft', sendAt: nextMonday().toISOString()})}; base.items = nlItemsOf(base);
+  if (!nlShown(base).length) base.items = ents().filter(e => e.is_public && e.num).sort((a, b) => b.start.localeCompare(a.start)).slice(0, 5).map((x, i) => ({...nlNewItem(x), c: i ? 3 : 6, full: !i}));
+  base.intro = base.intro || '<p>Your intro blurb for the week goes here. (Stand-in text, just for this preview.)</p>';
+  return base;
 }
 function nldPreview(now) {
   clearTimeout(nldT);
@@ -392,7 +485,7 @@ function nldStatus() {
 }
 document.addEventListener('input', ev => {
   const t = ev.target, k = t.dataset && t.dataset.nld; if (!k || !nld) return;
-  nld[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Math.max(8, Math.min(72, +t.value || NL_DEFAULT[k])) : k === 'cols' ? +t.value : t.value;
+  nld[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Math.max(8, Math.min(72, +t.value || NL_DEFAULT[k])) : t.value;
   t.closest('.nldrow').querySelector('.nldr').hidden = nldSame(k);
   nldStatus(); nldPreview();
 });
