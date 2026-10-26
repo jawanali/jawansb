@@ -44,11 +44,12 @@
       <h2 class="fh" id="pgTitle">what is going on.</h2>
       <button class="introx" id="introx" data-act="intro" aria-label="Hide the intro" title="Hide"></button>
      </div>
-     <div class="intro" id="intro">
-      <p>hello. I am Jawan. I am an insane man. This is my personal Blog website. I'm currently attempting to kick myself off of all mainstream social media sites and isolate myself in my own corner of the net. I know nothing of computers, and instead I relied exclusively upon Claude to hack this together. So there are probably extensive vulnerabilities all over this thing, all of which you can probably use to dox me and infiltrate my family. I kindly ask that you do not, and that if you have any burning questions, or any desire to hurt my feelings, that you forward them to my email: <a href="mailto:jawanali@gmail.com">jawanali@gmail.com</a></p>
-     </div>
+     <!-- filled in by app.js: your intro from Settings (or the default text) -->
+     <div class="intro" id="intro"></div>
     </aside>
  <div class="rail">
+  <!-- owner only: start a new experience (EXP page) or blog post (Blog page) -->
+  <button class="addbtn" id="fab" data-act="open">+ Log</button>
   <aside class="side" id="side">
     <section class="stats" id="statsBox">
       <div class="card">
@@ -83,7 +84,6 @@
   <main id="pgSet" hidden></main>
  </div>
 </div>
-<button class="fab" id="fab" data-act="open">+ Log</button>
 
 <div id="modal" class="ov" hidden>
   <div class="modal">

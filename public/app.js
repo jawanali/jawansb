@@ -11,7 +11,10 @@ const sel = {types: new Set(), people: new Set(), places: new Set()};
 let all = [], loaded = false, assets = true, page = 'exp', focus = null, sortBy = 'date', sortDir = 'desc', draft = null;
 // Drafts are saved like normal items but marked draft: true, so they stay out of the journal, blog, stats and numbering
 const ents = () => all.filter(x => !x.kind && !x.draft), posts = () => all.filter(x => x.kind === 'post' && !x.draft), drafts = () => all.filter(x => x.draft);
-const colors = () => (all.find(x => x.id === 'settings') || {}).colors || {};
+// the one "settings" item: tag colors and the intro (title + text). saveSettings changes some of it and keeps the rest.
+const settings = () => all.find(x => x.id === 'settings') || {id: 'settings', kind: 'settings'};
+const saveSettings = patch => put({...settings(), ...patch});
+const colors = () => settings().colors || {};
 const tagsOf = (e, k) => k === 'types' ? (e.types || (e.type ? [e.type] : [])) : (e[k] || []);
 
 /* --- TAG COLORS. Every tag gets an automatic color (from its name) unless you pick one in Settings.
@@ -246,7 +249,18 @@ const boardRO = new ResizeObserver(es => { if (!$('board')) return; if (es.some(
 const ICON_X = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_DOWN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 let introHidden = false;
+// the intro until you write your own in Settings
+const INTRO_TITLE = 'what is going on.';
+const INTRO_TEXT = "hello. I am Jawan. I am an insane man. This is my personal Blog website. I'm currently attempting to kick myself off of all mainstream social media sites and isolate myself in my own corner of the net. I know nothing of computers, and instead I relied exclusively upon Claude to hack this together. So there are probably extensive vulnerabilities all over this thing, all of which you can probably use to dox me and infiltrate my family. I kindly ask that you do not, and that if you have any burning questions, or any desire to hurt my feelings, that you forward them to my email: jawanali@gmail.com";
+// plain text -> paragraphs (a blank line starts a new one), with email addresses and web links made clickable
+const linkify = t => esc(t)
+  .replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)]/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
+  .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, m => `<a href="mailto:${m}">${m}</a>`);
+const introHtml = t => t.split(/\n\s*\n/).map(p => `<p>${linkify(p.trim()).replace(/\n/g, '<br>')}</p>`).join('');
 function drawIntro() {
+  const st = settings();
+  $('pgTitle').textContent = st.introTitle || INTRO_TITLE;
+  $('intro').innerHTML = loaded ? introHtml(st.intro || INTRO_TEXT) : '';   // wait for your saved text, so the default doesn't flash first
   $('intro').hidden = introHidden; $('introx').innerHTML = introHidden ? ICON_DOWN : ICON_X;
   $('introx').title = introHidden ? 'Show the intro' : 'Hide'; $('introx').setAttribute('aria-label', introHidden ? 'Show the intro' : 'Hide the intro');
 }
@@ -366,11 +380,17 @@ function tagSearch() {
 $('tq').addEventListener('input', tagSearch);
 function renderSet() {
   const E = ents();
-  $('pgSet').innerHTML = `<button class="link" data-act="go" data-v="exp">← Back</button><h2>Edit tags</h2><p class="mute">Pick a color for each tag. The text color is chosen automatically so it stays readable.</p>` +
+  const st = settings();
+  $('pgSet').innerHTML = `<button class="link" data-act="go" data-v="exp">← Back</button>
+    <h2>Intro</h2><p class="mute">The text in the far-left column (it shows when the window is wide). A blank line starts a new paragraph; email addresses and links become clickable.</p>
+    <label>Title</label><input id="sIntroT" value="${esc(st.introTitle || INTRO_TITLE)}">
+    <label>Text</label><textarea id="sIntro" rows="9">${esc(st.intro || INTRO_TEXT)}</textarea>
+    <div class="srow"><button class="go2" data-act="saveintro">SAVE INTRO</button><button class="link" data-act="resetintro">Back to the original text</button></div>
+    <h2>Edit tags</h2><p class="mute">Pick a color for each tag. The text color is chosen automatically so it stays readable.</p>` +
     KINDS.map(([k, l]) => { const names = uniq(k, E.flatMap(e => tagsOf(e, k))).sort((a, b) => key(a).localeCompare(key(b)));
       return `<h3>${l.toUpperCase()}</h3>` + (names.map(n => `<div class="srow"><span class="chip" style="${ts(k, n)}">${esc(n)}</span><input type="color" value="${tcol(k, n)}" data-k="${k}" data-v="${esc(n)}"><button class="link" data-act="resetc" data-k="${k}" data-v="${esc(n)}">Reset</button></div>`).join('') || '<p class="mute">No tags yet.</p>'); }).join('');
 }
-async function setColor(k, n, v) { const c = {...colors()}; if (v) c[k + ':' + n] = v; else delete c[k + ':' + n]; await put({id: 'settings', kind: 'settings', colors: c}); }
+async function setColor(k, n, v) { const c = {...colors()}; if (v) c[k + ':' + n] = v; else delete c[k + ':' + n]; await saveSettings({colors: c}); }
 
 /* --- THE LOG / BLOG FORM (one form, two modes: "e" = experience, "b" = blog post) --- */
 const loc = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
@@ -738,6 +758,8 @@ document.addEventListener('click', ev => {
   else if (a === 'rmI') { removePic(draft.imgs[+v].key); draft.imgs.splice(+v, 1); drawDraft(); }   // also takes it out of the text
   else if (a === 'pin') pinToggle(+v);
   else if (a === 'sortBy') { sortBy = v; render(); }
+  else if (a === 'saveintro') saveSettings({introTitle: $('sIntroT').value.trim() || undefined, intro: $('sIntro').value.trim() || undefined}).then(ok => ok && flash('Intro saved'));
+  else if (a === 'resetintro') saveSettings({introTitle: undefined, intro: undefined}).then(ok => ok && flash('Intro reset to the original'));
   else if (a === 'intro') { introHidden = !introHidden; drawIntro(); }
   else if (a === 'sortDir') { sortDir = sortDir === 'desc' ? 'asc' : 'desc'; render(); }
   else if (a === 'edit') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); }

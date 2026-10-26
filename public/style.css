@@ -440,18 +440,13 @@ h3{
   cursor:pointer
 }
 
-.fab{
-  position:fixed;
-  right:16px;
-  bottom:calc(16px + env(safe-area-inset-bottom,0px));
-  background:var(--acc);
-  color:var(--on);
-  border:0;
-  font:700 17px inherit;
-  padding:14px 26px;
-  box-shadow:0 6px 20px rgba(0,0,0,.25);
-  cursor:pointer
+/* "+ Log" / "+ Blog": at the top of the right column, the same size as the stat boxes below it */
+.addbtn{
+  display:block;width:100%;margin:0 0 10px;padding:14px;min-height:70px;   /* the stat boxes are 70px tall */
+  background:var(--acc);color:var(--on);border:1px solid var(--acc);
+  font-family:inherit;font-weight:700;font-size:15px;letter-spacing:1px;text-align:left;cursor:pointer
 }
+.addbtn:hover{filter:brightness(1.08)}
 
 .ov{
   position:fixed;
@@ -850,3 +845,5 @@ textarea{
 }
 .rich .yt .ytp::after{content:"";position:absolute;left:26px;top:13px;border-style:solid;border-width:9px 0 9px 15px;border-color:transparent transparent transparent #fff}
 .rich .yt:hover .ytp{background:#c00}
+.intro p + p{margin-top:8px}   /* space between paragraphs of the intro */
+#pgSet textarea{min-height:170px}
