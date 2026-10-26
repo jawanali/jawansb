@@ -77,7 +77,7 @@ const confirmEmail = link => `<div style="background:#313E50;padding:40px 16px;f
 async function api(req, env, u) {
   const p = u.pathname.slice(5), body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
 
-  if (p === 'health') return json({ok: true, key: !!env.RESEND_API_KEY, fake: env.FAKE_SEND === '1'});
+  if (p === 'health') return json({ok: true, key: !!env.RESEND_API_KEY, fake: env.FAKE_SEND === '1', host: u.hostname});
 
   if (p === 'subscribe' && req.method === 'POST') {
     const email = String(body.email || '').trim().toLowerCase();
