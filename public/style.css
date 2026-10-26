@@ -871,3 +871,20 @@ textarea{
 .statslink{display:block;margin-top:14px;font-size:13px;text-decoration:none;color:var(--acc)}
 .statslink:hover{text-decoration:underline}
 .sts.lib td,.sts.lib thead th{text-align:left}   /* the library lists words, not numbers */
+/* the top of the Stats page stays in view as you scroll: title, filters and the jump links */
+.stbar{position:sticky;top:0;z-index:3;background:var(--bg);padding:6px 0 8px;border-bottom:1px solid var(--line)}
+.stbar .srt{margin-top:6px}
+.jumps{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px}
+.jumps .link{padding:0;font-size:12px;text-decoration:none;color:var(--acc)}
+.jumps .link:hover{text-decoration:underline}
+#pgStats [id^=st-]{scroll-margin-top:150px}   /* jumping to a section leaves room for the bar above it */
+#pgStats a{color:inherit}
+/* poster / cover wall, and thumbnails in the library table */
+.wall{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}
+.wall img{height:150px;width:auto;display:block;border:1px solid var(--line)}
+.wall a:hover img{outline:2px solid var(--acc)}
+.lthumb{height:44px;width:auto;display:block}
+@media (max-width:720px){   /* on phones the bar is too tall to keep pinned: it scrolls away like the rest */
+  .stbar{position:static}
+  #pgStats [id^=st-]{scroll-margin-top:10px}
+}

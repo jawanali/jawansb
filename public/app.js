@@ -8,11 +8,12 @@ const BASE = location.origin;
 // The three tag categories, in the order they appear everywhere: [storage name, label, placeholder]
 const KINDS = [['types', 'Type'], ['people', 'People'], ['places', 'Location']];
 /* --- MOVIE / MUSIC METADATA: extra details kept on an experience whose Type is a movie or music, for your libraries and stats.
-       Saved as data.movie = {year, director, genre, country, poster} and data.music = {year, artist, genre, country, cover}.
+       Saved as data.movie = {title, year, director, genre, country, poster} and data.music = {title, year, artist, genre, country, cover}.
+       Their title is the film / album's own name for your library, separate from the post's title (which can say anything).
        Every field is a list (add as many as you like); poster / cover are uploaded images. None of it is shown on the site. --- */
 const META = {
-  movie: {label: 'Movie Metadata', match: /^(movies?|films?)$/i, fields: [['year', 'Year'], ['director', 'Director'], ['genre', 'Genre'], ['country', 'Country']], art: ['poster', 'Poster']},
-  music: {label: 'Music Metadata', match: /^(music|songs?|albums?)$/i, fields: [['year', 'Year'], ['artist', 'Artist'], ['genre', 'Genre'], ['country', 'Country']], art: ['cover', 'Cover Art']}
+  movie: {label: 'Movie Metadata', match: /^(movies?|films?)$/i, fields: [['title', 'Title'], ['year', 'Year'], ['director', 'Director'], ['genre', 'Genre'], ['country', 'Country']], art: ['poster', 'Poster']},
+  music: {label: 'Music Metadata', match: /^(music|songs?|albums?)$/i, fields: [['title', 'Title'], ['year', 'Year'], ['artist', 'Artist'], ['genre', 'Genre'], ['country', 'Country']], art: ['cover', 'Cover Art']}
 };
 const META_KEYS = Object.entries(META).flatMap(([g, m]) => m.fields.map(([f]) => g + '.' + f));   // tag keys like "movie.director"
 const TAG_KEYS = [...KINDS.map(([k]) => k), ...META_KEYS];   // every kind of tag box in the form
@@ -389,7 +390,7 @@ function tagSearch() {
   document.querySelectorAll('#tags [data-act="flt"]').forEach(b => b.hidden = !!q && !b.dataset.v.toLowerCase().includes(q));
 }
 $('tq').addEventListener('input', tagSearch);
-/* --- STATS (/stats): a plain stat sheet from your experiences and their movie / music metadata. Pick All time or one year.
+/* --- STATS (/exp/stats): a plain stat sheet from your experiences and their movie / music metadata. Pick All time or one year.
        Visitors who find this page only see stats from public entries (private ones never reach their browser). --- */
 let statsYear = 'all';
 const sumMin = l => l.reduce((a, e) => a + (e.minutes || 0), 0);
@@ -413,36 +414,58 @@ const tallyTable = (label, list, namesOf, limit = 15) => {
 };
 const sheet = rows => `<table class="sts sheet"><tbody>${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</tbody></table>`;
 const decade = y => /^\d{4}/.test(y) ? y.slice(0, 3) + '0s' : y;
+// the movie / music's own title (its library title), or the post title if you haven't given one
+const libTitle = (e, g) => tagsOf(e, g + '.title')[0] || e.title || '';
+const artOf1 = (e, g) => ((e[g] || {})[META[g].art[0]] || [])[0];   // its first poster / cover, if any
+// a link to the experience's own page (/exp/3)
+const postLink = (e, inner) => e.num ? `<a href="/exp/${e.num}" data-act="go" data-v="exp/${e.num}">${inner}</a>` : inner;
+let statsView = 'all';   // what to show: everything, or just movies / music
 function renderStats() {
   const everything = ents().sort((a, b) => (a.start || '').localeCompare(b.start || ''));
   const years = [...new Set(everything.map(yearOf))].sort().reverse();
   if (statsYear !== 'all' && !years.includes(statsYear)) statsYear = 'all';
-  const L = statsYear === 'all' ? everything : everything.filter(e => yearOf(e) === statsYear);
-  const pick = (v, l) => `<button class="tag ${statsYear === v ? 'on' : ''}" data-act="syear" data-v="${v}">${l}</button>`;
-  const longest = L.reduce((a, e) => !a || e.minutes > a.minutes ? e : a, null), topType = tally(L, e => tagsOf(e, 'types'))[0];
+  const L = statsYear === 'all' ? everything : everything.filter(e => yearOf(e) === statsYear), inYear = statsYear === 'all' ? '' : ' in ' + statsYear;
+  const pick = (act, cur, v, l) => `<button class="tag ${cur === v ? 'on' : ''}" data-act="${act}" data-v="${v}">${l}</button>`;
   const when = e => new Date(e.start).toLocaleDateString([], {month: 'short', day: 'numeric', year: 'numeric'});
-  let h = `<h2>Stats</h2><div class="tl srt">${pick('all', 'All time')}${years.map(y => pick(y, y)).join('')}</div>`;
-  h += `<h3>OVERVIEW</h3>` + sheet([
-    ['Experiences', L.length], ['Hours', hrs(sumMin(L)) + ` <span class="mute">(${sumMin(L).toLocaleString()} EXP)</span>`], ['Average ★', avgR(L)], ['Quality of life', qolOf(L)],
-    ['Days with an entry', new Set(L.map(e => new Date(e.start).toDateString())).size],
-    ['Longest', longest ? `${esc(longest.title)} <span class="mute">(${dur(longest.minutes)})</span>` : '—'],
-    ['Most-logged type', topType ? `${esc(topType.name)} <span class="mute">(${topType.list.length})</span>` : '—']]);
-  if (statsYear === 'all') h += `<h3>BY YEAR</h3>` + table(['Year', 'Experiences', 'Hours', 'Avg ★', 'QoL'], years.map(y => { const l = L.filter(e => yearOf(e) === y); return [y, l.length, hrs(sumMin(l)), avgR(l), qolOf(l)]; }));
-  else h += `<h3>BY MONTH</h3>` + table(['Month', 'Experiences', 'Hours', 'Avg ★', 'QoL'], [...Array(12).keys()].map(i => [i, L.filter(e => new Date(e.start).getMonth() === i)]).filter(([, l]) => l.length)
-    .map(([i, l]) => [new Date(2000, i, 1).toLocaleString([], {month: 'long'}), l.length, hrs(sumMin(l)), avgR(l), qolOf(l)]));
-  h += `<h3>TYPES</h3>` + tallyTable('Type', L, e => tagsOf(e, 'types'));
-  h += `<h3>PEOPLE</h3>` + tallyTable('Person', L, e => tagsOf(e, 'people'));
-  h += `<h3>LOCATIONS</h3>` + tallyTable('Location', L, e => tagsOf(e, 'places'));
-  for (const [g, who, whoLabel, noun] of [['movie', 'director', 'Director', 'Movies'], ['music', 'artist', 'Artist', 'Music']]) {
-    const M = L.filter(e => isA(e, g)), f = k => e => tagsOf(e, g + '.' + k);
-    h += `<h2 class="sth">${noun}</h2>`;
-    if (!M.length) { h += `<p class="mute">No ${noun.toLowerCase()} logged${statsYear === 'all' ? '' : ' in ' + statsYear} yet.</p>`; continue; }
-    h += sheet([[g === 'movie' ? 'Watched' : 'Listened', M.length], [g === 'movie' ? 'Different films' : 'Different titles', new Set(M.map(e => key(e.title || ''))).size],
+  const groups = [['movie', 'director', 'Director', 'Movies'], ['music', 'artist', 'Artist', 'Music']].filter(([g]) => statsView === 'all' || statsView === g);
+  // the jump bar: links to each part of the page
+  const jumps = [...(statsView === 'all' ? [['st-overview', 'Overview'], ['st-time', statsYear === 'all' ? 'By year' : 'By month'], ['st-types', 'Types'], ['st-people', 'People'], ['st-places', 'Locations']] : []),
+    ...groups.flatMap(([g, , , noun]) => [['st-' + g, noun + ' stats'], ['st-' + g + '-lib', noun + ' library']])];
+  let h = `<div class="stbar"><h2>Stats</h2>
+    <div class="tl srt">${pick('syear', statsYear, 'all', 'All time')}${years.map(y => pick('syear', statsYear, y, y)).join('')}</div>
+    <div class="tl srt">${pick('sview', statsView, 'all', 'Everything')}${pick('sview', statsView, 'movie', 'Movies')}${pick('sview', statsView, 'music', 'Music')}</div>
+    <nav class="jumps">${jumps.map(([id, l]) => `<button class="link" data-act="sjump" data-v="${id}">${l}</button>`).join('')}</nav></div>`;
+  if (statsView === 'all') {
+    const longest = L.reduce((a, e) => !a || e.minutes > a.minutes ? e : a, null), topType = tally(L, e => tagsOf(e, 'types'))[0];
+    h += `<h3 id="st-overview">OVERVIEW</h3>` + sheet([
+      ['Experiences', L.length], ['Hours', hrs(sumMin(L)) + ` <span class="mute">(${sumMin(L).toLocaleString()} EXP)</span>`], ['Average ★', avgR(L)], ['Quality of life', qolOf(L)],
+      ['Days with an entry', new Set(L.map(e => new Date(e.start).toDateString())).size],
+      ['Longest', longest ? `${postLink(longest, esc(longest.title))} <span class="mute">(${dur(longest.minutes)})</span>` : '—'],
+      ['Most-logged type', topType ? `${esc(topType.name)} <span class="mute">(${topType.list.length})</span>` : '—']]);
+    if (statsYear === 'all') h += `<h3 id="st-time">BY YEAR</h3>` + table(['Year', 'Experiences', 'Hours', 'Avg ★', 'QoL'], years.map(y => { const l = L.filter(e => yearOf(e) === y); return [y, l.length, hrs(sumMin(l)), avgR(l), qolOf(l)]; }));
+    else h += `<h3 id="st-time">BY MONTH</h3>` + table(['Month', 'Experiences', 'Hours', 'Avg ★', 'QoL'], [...Array(12).keys()].map(i => [i, L.filter(e => new Date(e.start).getMonth() === i)]).filter(([, l]) => l.length)
+      .map(([i, l]) => [new Date(2000, i, 1).toLocaleString([], {month: 'long'}), l.length, hrs(sumMin(l)), avgR(l), qolOf(l)]));
+    h += `<h3 id="st-types">TYPES</h3>` + tallyTable('Type', L, e => tagsOf(e, 'types'));
+    h += `<h3 id="st-people">PEOPLE</h3>` + tallyTable('Person', L, e => tagsOf(e, 'people'));
+    h += `<h3 id="st-places">LOCATIONS</h3>` + tallyTable('Location', L, e => tagsOf(e, 'places'));
+  }
+  for (const [g, who, whoLabel, noun] of groups) {
+    const M = L.filter(e => isA(e, g)), f = k => e => tagsOf(e, g + '.' + k), artName = META[g].art[1].toLowerCase();
+    h += `<h2 class="sth" id="st-${g}">${noun}</h2>`;
+    if (!M.length) { h += `<p class="mute">No ${noun.toLowerCase()} logged${inYear} yet.</p><span id="st-${g}-lib"></span>`; continue; }
+    h += sheet([[g === 'movie' ? 'Watched' : 'Listened', M.length], [g === 'movie' ? 'Different films' : 'Different titles', new Set(M.map(e => key(libTitle(e, g)))).size],
       ['Hours', hrs(sumMin(M))], ['Average ★', avgR(M)]]);
-    h += `<div class="sgrid"><div><h3>${whoLabel.toUpperCase()}S</h3>${tallyTable(whoLabel, M, f(who), 10)}</div><div><h3>GENRES</h3>${tallyTable('Genre', M, f('genre'), 10)}</div>
+    h += `<div class="sgrid"><div><h3>MOST ${g === 'movie' ? 'WATCHED' : 'PLAYED'}</h3>${tallyTable('Title', M, e => [libTitle(e, g)], 10)}</div>
+      <div><h3>${whoLabel.toUpperCase()}S</h3>${tallyTable(whoLabel, M, f(who), 10)}</div><div><h3>GENRES</h3>${tallyTable('Genre', M, f('genre'), 10)}</div>
       <div><h3>COUNTRIES</h3>${tallyTable('Country', M, f('country'), 10)}</div><div><h3>DECADES</h3>${tallyTable('Decade', M, e => f('year')(e).map(decade), 10)}</div></div>`;
-    h += `<h3>LIBRARY</h3>` + table(['Title', 'When', '★', 'Year', whoLabel, 'Genre', 'Country'],
-      [...M].reverse().map(e => [esc(e.title || ''), when(e), e.rating || '—', ...['year', who, 'genre', 'country'].map(k => esc(f(k)(e).join(', ')) || '<span class="mute">—</span>')]), 'lib');
+    // the library: a wall of posters / covers, then every entry (newest first); titles and pictures open the post
+    const newest = [...M].reverse(), withArt = newest.filter(e => artOf1(e, g));
+    h += `<h3 id="st-${g}-lib">LIBRARY</h3>`;
+    h += withArt.length ? `<div class="wall">${withArt.map(e => postLink(e, `<img src="${esc(imgSrc(artOf1(e, g)))}" alt="${esc(libTitle(e, g))}" title="${esc(libTitle(e, g))}" loading="lazy" decoding="async">`)).join('')}</div>`
+      : `<p class="mute">Add a ${artName} to an entry's ${META[g].label} and it shows up here.</p>`;
+    h += table(['', 'Title', 'When', '★', 'Year', whoLabel, 'Genre', 'Country'],
+      newest.map(e => [artOf1(e, g) ? `<img class="lthumb" src="${esc(imgSrc(artOf1(e, g)))}" alt="" loading="lazy" decoding="async">` : '', postLink(e, esc(libTitle(e, g))), when(e), e.rating || '—',
+        ...['year', who, 'genre', 'country'].map(k => esc(f(k)(e).join(', ')) || '<span class="mute">—</span>')]), 'lib');
   }
   $('pgStats').innerHTML = h;
 }
@@ -471,8 +494,7 @@ const tfBlock = ([k, l]) => `<div class="tin"><label>${l}</label><div id="c-${k}
 $('tfType').innerHTML = tfBlock(KINDS[0]); $('tf').innerHTML = `<div class="two">${tfBlock(KINDS[1])}${tfBlock(KINDS[2])}</div>`;
 // the Movie / Music Metadata sections (under Type). They're built once and only shown when a Type tag matches.
 $('tfMeta').innerHTML = Object.entries(META).map(([g, m]) => `<div class="meta" id="meta-${g}" hidden><h4 class="mtitle">${m.label}</h4>
-  <div class="two">${m.fields.slice(0, 2).map(([f, l]) => tfBlock([g + '.' + f, l])).join('')}</div>
-  <div class="two">${m.fields.slice(2).map(([f, l]) => tfBlock([g + '.' + f, l])).join('')}</div>
+  ${[0, 2, 4].map(i => `<div class="two">${m.fields.slice(i, i + 2).map(([f, l]) => tfBlock([g + '.' + f, l])).join('')}</div>`).join('')}
   <div><label>${m.art[1]}</label><div class="arts" id="art-${g}"></div><input type="file" accept="image/*" multiple data-art="${g}"></div></div>`).join('');
 function drawMeta() {
   for (const [g, m] of Object.entries(META)) {
@@ -809,11 +831,13 @@ async function save(asDraft) {
 }
 
 /* --- ADDRESSES: /strictlybusiness (the home page), /exp and /blog are the pages, /exp/3 or /blog/3 opens item number 3,
-       /settings is tag colors and the intro. The bare address and the old /portfolio go to /strictlybusiness.
+       /exp/stats is the Stats page, /settings is tag colors and the intro. The bare address and the old /portfolio go to /strictlybusiness.
        Old links like /#e-ID or /#b-ID still work. route() reads the address bar; nav() changes it without reloading. --- */
 function route() {
-  const [p, n] = location.pathname.split('/').filter(Boolean), h = location.hash.slice(1);
-  page = p === 'blog' ? 'blog' : p === 'exp' ? 'exp' : p === 'settings' ? 'set' : p === 'stats' ? 'stats' : 'port'; focus = n || null;   // anything else: Strictly Business
+  let [p, n] = location.pathname.split('/').filter(Boolean); const h = location.hash.slice(1);
+  page = p === 'blog' ? 'blog' : p === 'exp' ? (n === 'stats' ? 'stats' : 'exp') : p === 'settings' ? 'set' : p === 'stats' ? 'stats' : 'port';   // anything else: Strictly Business
+  if (page === 'stats') { n = null; if (p === 'stats') history.replaceState(null, '', '/exp/stats'); }   // the Stats page lives at /exp/stats (old /stats forwards)
+  focus = n || null;
   if (/^[eb]-/.test(h)) { page = h[0] === 'b' ? 'blog' : 'exp'; focus = h.slice(2); }
   else if (p !== 'strictlybusiness' && page === 'port') history.replaceState(null, '', '/strictlybusiness');
   render();
@@ -860,6 +884,8 @@ document.addEventListener('click', ev => {
   else if (a === 'saveintro') saveSettings({introTitle: $('sIntroT').value.trim() || undefined, intro: $('sIntro').value.trim() || undefined}).then(ok => ok && flash('Intro saved'));
   else if (a === 'resetintro') saveSettings({introTitle: undefined, intro: undefined}).then(ok => ok && flash('Intro reset to the original'));
   else if (a === 'syear') { statsYear = v; renderStats(); }
+  else if (a === 'sview') { statsView = v; renderStats(); }
+  else if (a === 'sjump') { const t = document.getElementById(v); if (t) t.scrollIntoView({behavior: 'smooth', block: 'start'}); }   // jump bar on the Stats page
   else if (a === 'intro') { introHidden = !introHidden; drawIntro(); }
   else if (a === 'sortDir') { sortDir = sortDir === 'desc' ? 'asc' : 'desc'; render(); }
   else if (a === 'edit') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); }
