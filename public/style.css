@@ -744,8 +744,8 @@ textarea{
 .bi:not(.open) > .card{overflow:hidden}
 .bi:not(.open):not([data-r]) > .card{max-height:300px}   /* cards you haven't sized yourself stop at 300px tall */
 .bi:not(.open) h4{font-size:15px}
-.bi:not(.open) .th{height:84px!important}
-.bi:not(.open) .rzh{display:none}
+.bi:not(.open):not(#pvCard) .rzh{display:none}
+.bi:not(.open) .gal.inl .th{height:var(--pvh,120px)!important}   /* on a card, photos in the text are as tall as the card's photo (--pvh) */
 .bi:not(.open) .rt{font-size:18px}
 .card.clip{-webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent);mask-image:linear-gradient(to bottom,#000 78%,transparent)}
 /* the expand / shrink arrow in each card's top-right corner */
@@ -777,3 +777,26 @@ textarea{
 .pvcard.sizing > .card{outline:1px dashed var(--acc)}
 .pvfoot{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
 .pvfoot .mute{font-size:12px}
+
+/* clicking anywhere on a preview card opens it: an invisible button covers the whole card (even videos) */
+.bix{position:absolute;inset:0 0 10px 0;z-index:2;background:transparent;border:0;padding:0;cursor:pointer}
+.xp{z-index:3}
+
+/* ===== PHOTOS BLOCK IN THE FORM: drag a photo to reorder, ✕ removes, the bottom button puts it in the text ===== */
+#ph{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.pv img{cursor:grab;touch-action:none}
+.pv.dragging{opacity:.6;outline:1px dashed var(--acc)}
+.pv button.pin{
+  top:auto;right:auto;bottom:6px;left:6px;width:auto;height:auto;padding:3px 7px;
+  font:600 11px system-ui,sans-serif;letter-spacing:.3px;background:rgba(0,0,0,.7);color:#fff
+}
+.pv.intext img{outline:2px solid var(--acc);outline-offset:-2px}   /* this photo is in the text */
+.pv.intext button.pin{background:var(--acc);color:var(--on)}
+/* photos placed in the text, inside the editor */
+.ql-editor img.pic{display:block;height:195px;width:auto;max-width:100%;margin:8px 0;outline:1px dashed var(--line)}
+/* choosing the photo for the preview card */
+.pvpics{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px}
+.pvpics .mute{font-size:12px;margin-right:4px}
+.pvpics img{height:44px;width:auto;cursor:pointer;opacity:.6;outline:2px solid transparent}
+.pvpics img.on{opacity:1;outline-color:var(--acc)}
+.pvpics img:hover{opacity:1}
