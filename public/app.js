@@ -329,12 +329,14 @@ function render() {
   document.documentElement.dataset.view = page;   // which page is open (the newsletter design page uses it to take the right column's space)
   const list = page === 'exp' || page === 'blog';   // the two pages with a board
   $('pgList').hidden = !list; $('pgSet').hidden = page !== 'set'; $('pgPort').hidden = page !== 'port'; $('pgStats').hidden = page !== 'stats';
-  $('pgNews').hidden = !['news', 'write', 'design'].includes(page);
+  $('pgNews').hidden = !['news', 'write', 'design'].includes(page); $('pgExpro').hidden = page !== 'expro';
   drawIntro(); drawNlBar();
   $('fab').hidden = !list || !owner; $('gear').hidden = !owner; $('status').hidden = !owner; $('status').textContent = 'Owner mode'; $('lock').textContent = owner ? 'Log out' : 'Owner login'; $('fab').textContent = page === 'blog' ? '+ Blog' : '+ Log';
   $('nvP').classList.toggle('cur', page === 'port'); $('nvE').classList.toggle('cur', page === 'exp' || page === 'set' || page === 'stats'); $('nvB').classList.toggle('cur', page === 'blog');
+  $('nvX').hidden = !owner; $('nvX').classList.toggle('cur', page === 'expro');
   // top cards show the filtered numbers while a filter is on
-  $('totExp').textContent = sh.exp.toLocaleString(); $('totQ').textContent = sh.n ? sh.qol.toFixed(2) : '—'; $('totN').textContent = sh.n;
+  const xpe = filtered ? 0 : exproExp();   // your finished EXPRO tasks count too (only you can see them, so visitors' total leaves them out)
+  $('totExp').textContent = (sh.exp + xpe).toLocaleString(); $('totExp').title = xpe ? `${sh.exp.toLocaleString()} from experiences + ${xpe.toLocaleString()} from EXPRO tasks` : ''; $('totQ').textContent = sh.n ? sh.qol.toFixed(2) : '—'; $('totN').textContent = sh.n;
   $('lblExp').textContent = filtered ? 'FILTERED EXP' : 'TOTAL EXP'; $('lblQ').textContent = filtered ? 'FILTERED QoL' : 'QUALITY OF LIFE'; $('lblN').textContent = filtered ? 'MATCHING' : 'EXPERIENCES';
   $('side').hidden = page !== 'exp';   // stats and filters only on the EXP page
   $('statsLink').hidden = !owner;
@@ -376,6 +378,7 @@ function render() {
   if (page === 'set') renderSet();
   if (page === 'stats') renderStats();
   if (['news', 'write', 'design'].includes(page)) renderNews();
+  if (page === 'expro') renderExpro();
 }
 /* --- FILTER MENU: slides open and shut instead of snapping. The search box hides tags that don't match what you type. --- */
 function fsOpen(want) {
@@ -835,12 +838,12 @@ async function save(asDraft) {
 }
 
 /* --- ADDRESSES: /strictlybusiness (the home page), /exp and /blog are the pages, /exp/3 or /blog/3 opens item number 3,
-       /exp/stats is the Stats page, /settings is tag colors and the intro, /newsletter is the signup page (/newsletter/write: the composer, /newsletter/design: its look and words). The bare address and the old /portfolio go to /strictlybusiness.
+       /exp/stats is the Stats page, /expro is your private planner (expro.js), /settings is tag colors and the intro, /newsletter is the signup page (/newsletter/write: the composer, /newsletter/design: its look and words). The bare address and the old /portfolio go to /strictlybusiness.
        Old links like /#e-ID or /#b-ID still work. route() reads the address bar; nav() changes it without reloading. --- */
 function route() {
   let [p, n] = location.pathname.split('/').filter(Boolean); const h = location.hash.slice(1);
-  page = p === 'blog' ? 'blog' : p === 'exp' ? (n === 'stats' ? 'stats' : 'exp') : p === 'settings' ? 'set' : p === 'stats' ? 'stats' : p === 'newsletter' ? (n === 'write' || n === 'design' ? n : 'news') : 'port';   // anything else: Strictly Business
-  if (['news', 'write', 'design'].includes(page)) n = null;
+  page = p === 'blog' ? 'blog' : p === 'exp' ? (n === 'stats' ? 'stats' : 'exp') : p === 'settings' ? 'set' : p === 'stats' ? 'stats' : p === 'expro' ? 'expro' : p === 'newsletter' ? (n === 'write' || n === 'design' ? n : 'news') : 'port';   // anything else: Strictly Business
+  if (['news', 'write', 'design', 'expro'].includes(page)) n = null;
   if (page === 'stats') { n = null; if (p === 'stats') history.replaceState(null, '', '/exp/stats'); }   // the Stats page lives at /exp/stats (old /stats forwards)
   focus = n || null;
   if (/^[eb]-/.test(h)) { page = h[0] === 'b' ? 'blog' : 'exp'; focus = h.slice(2); }

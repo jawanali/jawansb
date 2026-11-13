@@ -25,6 +25,8 @@
       <a class="nv" id="nvP" href="/strictlybusiness" data-act="go" data-v="strictlybusiness" aria-label="Strictly Business">STRICTLY BUSINE∫S</a>
       <a class="nv" id="nvE" href="/exp" data-act="go" data-v="exp">EXP</a>
       <a class="nv" id="nvB" href="/blog" data-act="go" data-v="blog">BLOG</a>
+      <!-- only you see this tab: your private planner -->
+      <a class="nv" id="nvX" href="/expro" data-act="go" data-v="expro" hidden>EXPRO</a>
     </h1>
     
 <div class="hr">
@@ -89,6 +91,7 @@
   <main id="pgStats" hidden></main>
   <main id="pgSet" hidden></main>
   <main id="pgNews" hidden></main>
+  <main id="pgExpro" hidden></main>
  </div>
 </div>
 
@@ -136,8 +139,9 @@
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
 
-<!-- newsletter.js only defines things, so it loads first; app.js starts the site -->
+<!-- newsletter.js and expro.js only define things, so it loads first; app.js starts the site -->
 <script src="/newsletter.js"></script>
+<script src="/expro.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

@@ -960,3 +960,88 @@ textarea{
 .nlrz{position:relative;display:inline-block;line-height:0;max-width:100%}
 .nlrzh{position:absolute;right:3px;bottom:9px;width:14px;height:14px;border-right:2px solid #fff;border-bottom:2px solid #fff;filter:drop-shadow(0 0 1px rgba(0,0,0,.8));cursor:nwse-resize;touch-action:none;opacity:.6}
 .nlrz:hover .nlrzh,.nlrzh:active{opacity:1}
+
+/* ===== EXPRO (/expro, expro.js): your private planner. Takes the whole width: no intro column, no right column. ===== */
+:root[data-view="expro"] .rail,:root[data-view="expro"] .lead{display:none}
+:root[data-view="expro"] .stage{grid-column:1/-1}
+.xphead{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;margin-bottom:14px}
+.xpdate{display:flex;align-items:center;gap:10px}
+.xpdate b{font-size:20px;font-weight:400;min-width:200px;text-align:center}
+.xpdate .ib{background:none;border:1px solid var(--line);color:var(--ink);font:inherit;padding:2px 10px;cursor:pointer}
+.xptabs{display:flex;gap:6px}
+.xpexp{margin-left:auto;font-size:12px;letter-spacing:1px;color:var(--mute)}
+.xpexp b{font:600 16px Roboto,system-ui,sans-serif;color:var(--acc);margin-right:4px}
+/* the top row: running totals, then the tray of tasks waiting to be scheduled */
+.xptop{display:grid;grid-template-columns:270px minmax(0,1fr);gap:14px;margin-bottom:18px;align-items:stretch}
+.xpmeters{display:grid;gap:10px;background:var(--card);border:1px solid var(--line);padding:12px;font-size:13px}
+.xpm>span{display:block;font-size:11px;letter-spacing:1.5px;color:var(--mute);margin-bottom:3px}
+.xpm b{font-weight:600}.xpm b.neg{color:#ff8a7a}
+.xpm .mute{font-size:12px}
+.xpbar{height:7px;background:var(--bg);border:1px solid var(--line);margin-bottom:4px}
+.xpbar i{display:block;height:100%;background:var(--acc)}
+.xpbar.over{border-color:#ff8a7a}.xpbar.over i{background:#ff8a7a}
+.xptray{background:var(--card);border:1px dashed var(--line);padding:16px 12px 10px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.xptray.drop{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 10%,var(--card))}
+.xptl{display:flex;flex-wrap:wrap;gap:18px 16px;align-items:flex-end;padding-top:12px;min-height:58px}
+.xpt{position:relative;padding:6px 8px;cursor:grab;user-select:none;font-size:12px;line-height:1.3;touch-action:none}
+.xpt b{display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xpt span{opacity:.85}.xpt em{display:block;font-size:11px;opacity:.85}
+.xpt.sel{outline:2px solid var(--ink);outline-offset:2px}
+.xpnew{display:flex;gap:6px;flex-wrap:wrap}
+.xpnew input{flex:1 1 180px;width:auto}.xpnew select{width:auto;flex:0 0 auto}
+.xpnew .go2{flex:0 0 auto;padding:8px 14px}
+/* the calendar and the side panel */
+.xpbody{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:24px;align-items:start}
+.xpcalbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.xpcalbar .mute{font-size:12px}
+.xpdepth{display:flex;align-items:center;gap:8px;margin:0}
+.xpdepth input{width:110px;padding:0}
+.xpcal{background:var(--card);border:1px solid var(--line);overflow:hidden}
+.xpplane{position:relative;user-select:none}
+.xph{position:absolute;left:0;right:0;border-top:1px solid color-mix(in srgb,var(--mute) 35%,transparent)}
+.xph.half{border-top-style:dashed;border-color:color-mix(in srgb,var(--mute) 16%,transparent)}
+.xph span{position:absolute;left:6px;top:-8px;font-size:11px;color:var(--mute);background:var(--card);padding:0 3px}
+.xpnow{position:absolute;left:44px;right:0;border-top:2px solid #ff8a7a;z-index:999}
+.xpnow::before{content:"";position:absolute;left:-4px;top:-5px;width:8px;height:8px;background:#ff8a7a}
+.xpb{position:absolute}
+.xps{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.xpf{position:absolute;inset:0;padding:3px 7px;font-size:12px;line-height:1.3;overflow:hidden;cursor:grab;touch-action:none;border:1px solid rgba(0,0,0,.18)}
+.xpf b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:16px}
+.xpf.small{padding-top:0}.xpf.small b{font-size:11px}
+.xpf span{opacity:.85;font-size:11px}
+.xpb.busy .xpf{background-image:repeating-linear-gradient(135deg,transparent 0 7px,rgba(255,255,255,.06) 7px 14px)}
+.xpb.done .xpf{opacity:.8}
+.xpb.sel .xpf{outline:2px solid var(--ink);outline-offset:1px}
+.xpb.ghost,.xpb.lifted{opacity:.45}
+.xpplan{position:absolute;left:0;right:0;top:0;border:1px dashed var(--ink);opacity:.5;pointer-events:none}
+.xpgl{position:absolute;left:0;right:0;bottom:0;height:9px;cursor:ns-resize}
+.xpgl:hover{background:rgba(255,255,255,.25)}
+.xpgz{position:absolute;right:0;top:0;width:15px;height:15px;font:600 10px/15px Roboto,system-ui,sans-serif;font-style:normal;text-align:center;cursor:nesw-resize;background:rgba(0,0,0,.28);color:#fff}
+.xpgz:hover{background:var(--acc);color:var(--on)}
+.xpghost{position:fixed;z-index:9999;pointer-events:none;background:var(--panel);border:1px solid var(--acc);color:var(--ink);padding:4px 8px;font-size:12px}
+.xpside{background:var(--card);border:1px solid var(--line);padding:4px 16px 16px;position:sticky;top:12px}
+.xpside h3{margin-top:14px}
+.xpside .go{margin-top:14px}
+.xpside .mute{font-size:12px;margin:6px 0}
+.xpr{display:flex;gap:4px}
+.xpr button{width:34px;height:30px;background:var(--bg);border:1px solid var(--line);color:var(--ink);font:inherit;cursor:pointer}
+.xpr button.on{background:var(--acc);color:var(--on);border-color:var(--acc)}
+.xpmin{display:flex;gap:6px;align-items:center}.xpmin input{width:90px}.xpmin .tag{padding:7px 10px}
+.xplinks{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:14px}
+.xpvs{margin-top:12px;padding:10px;border:1px solid var(--acc);font-size:13px;line-height:1.6}
+.xpvs b{color:var(--acc)}.xpvs em{color:var(--mute)}
+.xpcheck{border:1px solid var(--acc);padding:2px 12px 10px;margin-top:12px}
+.xpcheck p{margin:4px 0 8px}
+.xpbusyrow{display:flex;justify-content:space-between;width:100%;margin-bottom:6px}
+.xpbusyrow span{display:inline;opacity:.75}
+.xpidea{border:1px solid var(--line);padding:4px 10px 10px;margin-top:14px;font-size:13px}
+.xphint{margin-top:18px!important}
+/* the Domains tab */
+.xpnotes{margin:4px 0 0;padding-left:18px;line-height:1.9}
+.xptable td,.xptable th{white-space:nowrap}
+.xpshare{display:inline-block;width:60px;height:6px;background:var(--bg);margin-right:6px;vertical-align:middle}
+.xpshare i{display:block;height:100%;background:var(--acc)}
+.xpdoms{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.xpdom{display:flex;align-items:center;gap:6px;border:1px solid var(--line);padding:3px 8px 3px 3px;font-size:13px}
+.xpdom input[type=color]{width:24px;height:22px}
+@media (max-width:1000px){.xptop,.xpbody{grid-template-columns:1fr}.xpside{position:static}}
