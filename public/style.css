@@ -1096,3 +1096,8 @@ textarea{
 .xpsub.dn input:not([type]){text-decoration:line-through;color:var(--mute)}
 .xpsub .go2{flex:0 0 auto;padding:6px 10px}
 .xpside textarea{min-height:64px}
+.xpgt{position:absolute;left:0;right:15px;top:0;height:7px;cursor:ns-resize;z-index:1}
+.xpgL,.xpgR{position:absolute;top:15px;bottom:9px;width:7px;cursor:ew-resize;z-index:1}
+.xpgL{left:0}.xpgR{right:0}
+.xpgt:hover,.xpgL:hover,.xpgR:hover{background:rgba(255,255,255,.25)}
+.xpb.cl .xpf{border-left:0}.xpb.cr .xpf{border-right:0}
