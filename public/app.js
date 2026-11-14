@@ -604,7 +604,7 @@ function drawDrafts() {
 }
 function suggest(k) {
   const q = $('i-' + k).value.trim().toLowerCase(), box = $('s-' + k);
-  const known = uniq(k, ents().flatMap(e => tagsOf(e, k))).filter(n => !draft[k].some(x => key(x) === key(n)));
+  const known = (k === 'types' ? xpDomains() : uniq(k, ents().flatMap(e => tagsOf(e, k)))).filter(n => !draft[k].some(x => key(x) === key(n)));   // Types and EXPRO domains are one list
   const starts = n => n.toLowerCase().startsWith(q);
   const hits = q ? known.filter(n => n.toLowerCase().includes(q)).sort((a, b) => starts(b) - starts(a)).slice(0, 6) : [];
   box.innerHTML = hits.map(n => `<button type="button" class="sg" data-act="pick" data-k="${k}" data-v="${esc(n)}">${esc(n)}</button>`).join('');
@@ -827,7 +827,8 @@ async function save(asDraft) {
   const o = b ? {kind: 'post', id, ...extra, title: t, body: d, html, images, imgH, order, created: draft.old && !wasDraft() ? draft.old.created : new Date().toISOString(),
       pvShow: draft.pv.show, pvOrder: draft.pv.order || undefined, pvC: draft.pv.c, pvR: draft.pv.r, pvImg: draft.pv.img, pvImgH: draft.pv.imgH}
     : {id, ...extra, title: t, desc: d, html, start: iso(s), end: iso(e), minutes: m || 0, rating: draft.rating, types: draft.types, people: draft.people, places: draft.places, images, imgH, order, movie: metaOf('movie'), music: metaOf('music'),
-      pvShow: draft.pv.show, pvOrder: draft.pv.order || undefined, pvC: draft.pv.c, pvR: draft.pv.r, pvImg: draft.pv.img, pvImgH: draft.pv.imgH};   // the preview card's settings
+      pvShow: draft.pv.show, pvOrder: draft.pv.order || undefined, pvC: draft.pv.c, pvR: draft.pv.r, pvImg: draft.pv.img, pvImgH: draft.pv.imgH,   // the preview card's settings
+      task: draft.fromTask || (draft.old && draft.old.task), effort: draft.old && draft.old.effort != null ? draft.old.effort : draft.effort};   // EXPRO: the task it was shared from, and its effort
   const ok = await put(o);
   if (!ok) return fail('Could not save. Are you still logged in?');
   const artOf = x => Object.keys(META).flatMap(g => (x && x[g] && x[g][META[g].art[0]]) || []), kept = [...images, ...artOf(o)];
