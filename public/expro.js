@@ -739,6 +739,12 @@ document.addEventListener('pointermove', ev => {
     if (prev !== g.gridAt || g.overChest !== g.wasChest) { g.wasChest = g.overChest; xpDrawTray(); }
     if (inGrid || g.overChest) { g.over = false; xpGhost(ev, g, true); return; }
   }
+  if (g.mode === 'tray') {   // a "No time yet" task over the grid or the chest: it goes back there
+    const was = g.overChest; g.overChest = !!(under && under.closest('#xpChest'));
+    const gr = $('xpGrid').getBoundingClientRect(); g.overGrid = !xpChest && ev.clientX > gr.left && ev.clientX < gr.right && ev.clientY > gr.top && ev.clientY < gr.bottom;
+    if (was !== g.overChest) xpDrawTray();
+    if (g.overGrid || g.overChest) { g.over = false; xpGhost(ev, g, false); xpDrawCal(); return; }
+  }
   if (xpView === 'month') {
     if (!['tray', 'tpl'].includes(g.mode)) return;
     const cell = under && under.closest('[data-mday]'); g.overDay = cell ? cell.dataset.mday : null;
@@ -768,6 +774,15 @@ document.addEventListener('pointermove', ev => {
   if (!['tray', 'tpl'].includes(g.mode) || g.over) { if (ev.clientY < box.top + geo.head + 30) cal.scrollTop -= 14; else if (ev.clientY > box.bottom - 30) cal.scrollTop += 14; }   // near the edge: scroll
   xpDrawCal(); xpDrawMeters();
 });
+function xpLooseBack(t, chest) {   // off the "No time yet" row; its block stays (or is made) in the grid or the chest
+  if (!t) return renderExpro();
+  const tp = all.find(x => x.id === t.tpl && x.kind === 'tasktype') || xpTplByTitle(t.title);
+  if (xpSel === t.id) xpSel = null;
+  const done = () => xpDelete(t.id);
+  if (tp && !!tp.archived === chest) return done().then(() => flash(chest ? `"${t.title}" is in the chest` : `"${t.title}" is back in your tasks`));
+  const blk = tp ? {...tp, archived: chest, order: chest ? tp.order : xpNewTpl(tp).order} : {...xpNewTpl(t), ...xpFromTpl(t), archived: chest};
+  xpSave(blk, chest ? `"${t.title}" is in the chest` : `"${t.title}" is back in your tasks`).then(ok => ok && done());
+}
 function xpGhost(ev, g, hide) {
   let gh = $('xpGhost');
   if (!gh) { gh = document.createElement('div'); gh.id = 'xpGhost'; gh.className = 'xpghost'; gh.textContent = g.item.title; document.body.appendChild(gh); }
@@ -791,6 +806,7 @@ document.addEventListener('pointerup', () => {
     return xpSave({...xpFromTpl(p), id, kind: 'task', is_public: false, title: p.title, domain: p.domain, est: p.est, effort: p.effort, tpl: p.id, makeup: xpOwed(p)[0]?.id, ...at, created: new Date().toISOString()});
   }
   if (g.mode === 'tray') {
+    if (g.overChest || g.overGrid) return xpLooseBack(all.find(x => x.id === g.id), g.overChest);
     if (xpView === 'month' && g.overDay) xpSaveTask(g.id, {day: g.overDay, start: null});
     else if (xpView !== 'month' && g.over) { xpSel = g.id; xpSaveTask(g.id, {day: g.cur.day, start: g.cur.start}); }
     else renderExpro();
