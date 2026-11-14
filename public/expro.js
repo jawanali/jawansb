@@ -247,6 +247,7 @@ function renderExpro() {
   if (!owner) { el.innerHTML = `<p class="mute">${loaded ? 'This page is private.' : 'Loading...'}</p>`; return; }
   if (!loaded) { el.innerHTML = '<p class="mute">Loading...</p>'; return; }
   xpDate = xpDate || xpToday();
+  const sy = scrollY;   // redrawing briefly shortens the page, which made the browser jump to the top; put the scroll back after
   xpChores();
   const today = xpToday(), wk = xpWeek(xpDate), fmt = (k, o) => new Date(k + 'T12:00').toLocaleDateString(undefined, o);
   const lbl = xpView === 'month' ? fmt(xpDate, {month: 'long', year: 'numeric'}) : `${fmt(wk[0], {month: 'short', day: 'numeric'})} - ${fmt(wk[6], {month: 'short', day: 'numeric'})}`;
@@ -264,6 +265,7 @@ function renderExpro() {
   if (cal) { xpDrawMeters(); xpDrawTray(); xpDrawCal(); xpDrawSide(); }
   else xpDrawStats();
   xpDrawMini();
+  if (scrollY !== sy) scrollTo(0, sy);
 }
 
 function xpDrawMeters() {
@@ -602,7 +604,7 @@ document.addEventListener('click', ev => {
 function xpSubEdit(o, delId) {   // add the typed subtask, or remove one
   if (delId) return xpSave({...o, subs: (o.subs || []).filter(x => x.id !== delId)});
   const text = ($('xpSubN').value || '').trim(); if (!text) return;
-  xpSave({...o, subs: [...(o.subs || []), {id: xpId('s'), text, done: false}]}).then(() => $('xpSubN') && $('xpSubN').focus());
+  xpSave({...o, subs: [...(o.subs || []), {id: xpId('s'), text, done: false}]}).then(() => $('xpSubN') && $('xpSubN').focus({preventScroll: true}));
 }
 function xpAdd() {   // the form under the grid: a new permanent task block, top-left
   const title = $('xpNT').value.trim(); if (!title) { $('xpNT').focus(); return; }
@@ -612,7 +614,7 @@ function xpAdd() {   // the form under the grid: a new permanent task block, top
   const effort = +$('xpNF').value;
   xpNewDom = false;
   xpSave([xpNewTpl({title, domain, est, effort}), {...xpCfg(), ...xpAddDomain(domain), lastDomain: domain, lastTime: sdur(est), lastEffort: effort}]);
-  setTimeout(() => $('xpNT') && $('xpNT').focus());
+  setTimeout(() => $('xpNT') && $('xpNT').focus({preventScroll: true}));
 }
 /* --- typing --- */
 document.addEventListener('keydown', ev => {
