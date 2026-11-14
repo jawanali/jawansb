@@ -982,15 +982,18 @@ textarea{
 .xpbar.over{border-color:#ff8a7a}.xpbar.over i{background:#ff8a7a}
 .xptray{background:var(--card);border:1px dashed var(--line);padding:0 12px 10px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .xptray.drop{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 10%,var(--card))}
-.xpt{position:relative;padding:6px 8px;cursor:grab;user-select:none;font-size:12px;line-height:1.3;touch-action:none;min-width:0;height:58px;overflow:hidden}
+.xpt{position:relative;padding:6px 8px;cursor:grab;user-select:none;font-size:12px;line-height:1.3;touch-action:none;min-width:0;height:58px}
+.xpt::before,.xpt::after{content:'';position:absolute;left:calc(-1 * var(--e,0px));pointer-events:none}
+.xpt::before{top:0;width:var(--e,0px);height:calc(100% + var(--e,0px));background:var(--l);clip-path:polygon(100% 0,0 var(--e,0px),0 100%,100% calc(100% - var(--e,0px)))}
+.xpt::after{top:100%;width:calc(100% + var(--e,0px));height:var(--e,0px);background:var(--b);clip-path:polygon(var(--e,0px) 0,100% 0,calc(100% - var(--e,0px)) 100%,0 100%)}
 .xpt.sm{width:170px;flex:0 0 auto}
 .xpt.lifted{opacity:.35}
 .xpt span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.xploose{display:flex;flex-wrap:wrap;gap:16px 14px;align-items:center;padding:12px 0 6px;border-bottom:1px dashed var(--line)}
-.xploose>span{font-size:11px;letter-spacing:1.5px;color:var(--mute);flex-basis:100%}
+.xploose{display:flex;flex-wrap:wrap;gap:22px 24px;align-items:center;padding:12px 0 22px 18px;border-bottom:1px dashed var(--line)}
+.xploose>span{margin-left:-18px;font-size:11px;letter-spacing:1.5px;color:var(--mute);flex-basis:100%}
 .xpgw{display:grid;grid-template-columns:minmax(0,1fr) 84px;gap:14px;align-items:stretch}
 /* the task grid: 5 across, 2 rows showing, scroll for the rest. Padding leaves room for the blocks' 3D sides */
-.xpgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-auto-rows:58px;gap:18px 18px;padding:16px 18px 4px 2px;max-height:156px;overflow-y:auto;align-content:start}
+.xpgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-auto-rows:58px;gap:20px 20px;padding:4px 4px 18px 18px;max-height:160px;overflow-y:auto;align-content:start}
 .xpchest{background:var(--bg);border:1px solid var(--line);color:var(--mute);font:600 11px/1.4 inherit;letter-spacing:1.5px;cursor:pointer;margin-top:16px;max-height:134px}
 .xpchest small{font-size:16px;color:var(--ink);letter-spacing:0}
 .xpchest.drop,.xpchest:hover{border-color:var(--acc);color:var(--acc)}
@@ -1010,7 +1013,7 @@ textarea{
 .xpt b{display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xpt span{opacity:.85}.xpt em{display:block;font-size:11px;opacity:.85}
 .xpt.sel{outline:2px solid var(--ink);outline-offset:2px}
-.xpt.owe{border-left:4px solid #c0503c}.xpt.owe b{padding-right:58px}
+.xpt.owe{box-shadow:inset 4px 0 #c0503c;padding-left:12px}.xpt.owe b{padding-right:58px}
 .xpowe{position:absolute;top:0;right:0;background:#c0503c;color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;padding:2px 5px;text-decoration:none}
 .xpdn{display:flex;gap:8px;margin-top:18px}.xpside .xpdn .go,.xpside .xpdn .go2{margin:0;flex:1;padding:12px;font-size:14px;font-weight:700;letter-spacing:1px;line-height:1.2}.xpdn .go2{border-color:#c0503c;color:#c0503c}
 .xpowed{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line)}.xpowed span{flex-basis:100%}

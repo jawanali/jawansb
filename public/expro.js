@@ -303,8 +303,9 @@ function xpFaces(col, kind) {
 }
 const xpDomSelect = (cur, attrs) => `<select ${attrs}>${xpDomains().concat(cur && !xpDomains().some(x => key(x) === key(cur)) ? [cur] : []).map(v => `<option${key(v) === key(cur || '') ? ' selected' : ''}>${esc(v)}</option>`).join('')}<option value="__new">New domain...</option></select>`;
 const xpBlock3d = (o, cls, attrs, extra = '') => {
-  const f = xpFaces(xpCol(o.domain)), sh = Array.from({length: o.effort * 3}, (_, i) => `${i + 1}px ${-(i + 1)}px 0 ${i % 3 === 2 ? f.bot : f.left}`).join(',');
-  return `<div class="${cls}${xpSel === o.id ? ' sel' : ''}" data-xid="${o.id}" ${attrs} style="background:${f.top};color:${ink(f.top)};box-shadow:${sh}">
+  // the same block as on the calendar: its left side and bottom show below-left of the front, as deep as its effort
+  const f = xpFaces(xpCol(o.domain)), e = Math.min(16, o.effort * xpDepth() * .6 * Math.SQRT1_2);
+  return `<div class="${cls}${xpSel === o.id ? ' sel' : ''}" data-xid="${o.id}" ${attrs} style="background:${f.top};color:${ink(f.top)};--e:${e.toFixed(1)}px;--l:${f.left};--b:${f.bot}">
     <b>${esc(o.title)}</b><span>${esc(o.domain)}, ${sdur(o.est)}, effort ${o.effort}${(o.subs || []).length ? ', ' + xpSubCount(o) : ''}</span>${extra}</div>`;
 };
 function xpDrawTray() {
@@ -670,7 +671,7 @@ document.addEventListener('keydown', ev => {
 });
 document.addEventListener('input', ev => {
   if (page !== 'expro') return;
-  if (ev.target.id === 'xpDepth') { xpDepthLive = +ev.target.value; xpDrawCal(); }
+  if (ev.target.id === 'xpDepth') { xpDepthLive = +ev.target.value; xpDrawCal(); xpDrawTray(); }
   if (ev.target.id === 'xmT') xpMiniFill();
   if (ev.target.id === 'xmE' && xpMini) { const m = xpParse(ev.target.value); if (m) { xpMini.est = m; xpDrawCal(); } }
 });
