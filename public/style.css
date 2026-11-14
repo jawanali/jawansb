@@ -1089,3 +1089,10 @@ textarea{
 .xpdom{display:flex;align-items:center;gap:6px;border:1px solid var(--line);padding:3px 8px 3px 3px;font-size:13px}
 .xpdom input[type=color]{width:24px;height:22px}
 @media (max-width:1000px){.xptop,.xpbody{grid-template-columns:1fr}.xpside{position:static}}
+.xpsubs{display:grid;gap:4px}
+.xpsub{display:flex;gap:6px;align-items:center}
+.xpsub input[type=checkbox]{width:16px;height:16px;flex:0 0 auto;accent-color:var(--acc)}
+.xpsub input:not([type]){flex:1 1 auto;width:auto;padding:5px 8px}
+.xpsub.dn input:not([type]){text-decoration:line-through;color:var(--mute)}
+.xpsub .go2{flex:0 0 auto;padding:6px 10px}
+.xpside textarea{min-height:64px}
