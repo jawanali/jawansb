@@ -1010,6 +1010,10 @@ textarea{
 .xpt b{display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xpt span{opacity:.85}.xpt em{display:block;font-size:11px;opacity:.85}
 .xpt.sel{outline:2px solid var(--ink);outline-offset:2px}
+.xpt.owe{border-left:4px solid #c0503c}.xpt.owe b{padding-right:58px}
+.xpowe{position:absolute;top:0;right:0;background:#c0503c;color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;padding:2px 5px;text-decoration:none}
+.xpdn{display:flex;gap:8px;margin-top:18px}.xpdn .go{margin:0;flex:1}.xpdn .go2{border-color:#c0503c;color:#c0503c}
+.xpowed{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line)}.xpowed span{flex-basis:100%}
 .xpnew{display:flex;gap:6px;flex-wrap:wrap}
 .xpnew input{flex:1 1 200px;width:auto}.xpnew select{width:auto;flex:0 0 auto}
 .xpnew .xpne{flex:0 0 90px}.xpnew .xpnd{flex:0 0 150px}

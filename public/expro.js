@@ -32,7 +32,7 @@ const XP_REPEATS = [['once', 'This day only'], ['daily', 'Every day'], ['weekday
    now and then, not daily. A week: six of those days and one to recover = 300. A month: the week's rate over its days. */
 const XP_MAX_DAY = 50, XP_MAX_WEEK = 300, XP_LEARN_DAYS = 14;
 const XP_PX = .8;   // calendar pixels per minute
-let xpView = 'week', xpDate = null, xpSel = null, xpDoneForm = null, xpRange = 'week', xpDrag = null, xpDepthLive = null;
+let xpView = 'week', xpDate = null, xpSel = null, xpDoneForm = null, xpNotForm = null, xpRange = 'week', xpDrag = null, xpDepthLive = null;
 let xpNewDom = false, xpChest = false, xpMini = null, xpRolled = '', xpMigrated = false;
 const xpRepMade = new Set();
 const xpScroll = {key: null, top: 0};   // where the calendar is scrolled to, kept across redraws
@@ -45,7 +45,8 @@ const xpShift = (k, n) => { const d = new Date(k + 'T12:00'); d.setDate(d.getDat
 const xpDow = k => new Date(k + 'T12:00').getDay();
 const xpWeek = k => { const s = xpShift(k, -xpDow(k)); return [0, 1, 2, 3, 4, 5, 6].map(i => xpShift(s, i)); };   // Sunday to Saturday
 const xpMonth = k => { const l = [], p = k.slice(0, 7); for (let d = p + '-01'; d.startsWith(p); d = xpShift(d, 1)) l.push(d); return l; };
-const xpRangeDays = () => xpView === 'month' ? xpMonth(xpDate) : xpWeek(xpDate);
+const xpRangeDays = () => xpView === 'month' ? xpMonth(xpDate) : xpView === 'day' ? [xpDate] : xpWeek(xpDate);
+const xpTimed = () => xpView === 'week' || xpView === 'day';   // the views with hours down the side
 const xpId = p => p + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const xpTasks = () => all.filter(x => x.kind === 'task');
 const xpTpls = (arch = false) => all.filter(x => x.kind === 'tasktype' && !!x.archived === arch).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -79,6 +80,21 @@ const xpLen = t => t.done ? t.done.min / xpSpan(t) : t.est;   // one day's lengt
 const xpEff = t => t.done ? t.done.effort : t.effort;
 // a copy of a grid block's description and subtasks for a new task on the calendar (subtasks start unticked)
 const xpFromTpl = p => p ? {notes: p.notes || undefined, subs: (p.subs || []).map(x => ({id: xpId('s'), text: x.text, done: false}))} : {};
+// planned things you didn't do, still waiting to be made up (a make-up only counts while it isn't itself not done)
+const xpOwed = p => xpTasks().filter(t => t.skipped && !t.skipped.forgiven && (t.tpl === p.id || key(t.title) === key(p.title)) && !xpTasks().some(x => x.makeup === t.id && !x.skipped))
+  .sort((a, b) => a.skipped.day.localeCompare(b.skipped.day) || (a.skipped.start ?? 0) - (b.skipped.start ?? 0));
+const xpWhen = s => new Date(s.day + 'T12:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}) + (s.start != null ? ' ' + clock(s.start) : '');
+function xpInTheWay(t) {   // what else was on the calendar while this task was planned
+  if (t.start == null || !t.day) return [];
+  const found = new Map(), len = xpLen(t);
+  for (let d = t.day; d <= xpShift(xpLast(t), 1); d = xpShift(d, 1)) {
+    const off = xpGap(t.day, d) * 1440, ivs = Array.from({length: xpSpan(t)}, (_, g) => [g * 1440 + t.start - off, g * 1440 + t.start + len - off]);
+    xpItemsFor(d).filter(x => x.id !== t.id && !x.ghost && x.id !== '__mini' && !x.lifted && ivs.some(([a, b]) => x.start < b && x.start + x.len > a))
+      .forEach(x => { if (!found.has(x.title)) found.set(x.title, xpReal(x) ? 0 : 1); });
+  }
+  const l = [...found].sort((a, b) => a[1] - b[1]);
+  return (l.some(x => !x[1]) ? l.filter(x => !x[1]) : l).map(x => x[0]);   // things that really happened first
+}
 const xpSubCount = o => (o.subs || []).length ? `${o.subs.filter(x => x.done).length}/${o.subs.length}` : '';
 // the description box and subtask checklist, shown for calendar tasks and grid blocks alike
 const xpNotesHtml = o => `<label>Description</label><textarea data-xnote="1" rows="3" placeholder="Notes">${esc(o.notes || '')}</textarea>
@@ -153,7 +169,7 @@ function xpChores() {
   if (xpView === 'month') return;
   const make = [];
   xpRangeDays().filter(k => k >= today).forEach(k => (c.repeats || []).forEach(r => {
-    if (r.dow !== xpDow(k) || (r.skip || []).includes(k) || xpRepMade.has(r.id + k) || xpTasks().some(t => t.rep === r.id && (t.day === k || (t.done && t.done.day === k)))) return;
+    if (r.dow !== xpDow(k) || (r.skip || []).includes(k) || xpRepMade.has(r.id + k) || xpTasks().some(t => t.rep === r.id && (t.day === k || (t.done && t.done.day === k) || (t.skipped && t.skipped.day === k)))) return;
     xpRepMade.add(r.id + k);
     make.push({...xpFromTpl(xpTplByTitle(r.title)), id: xpId('t'), kind: 'task', is_public: false, title: r.title, domain: r.domain, est: r.est, effort: r.effort, day: k, start: r.start, rep: r.id, created: new Date().toISOString()});
   }));
@@ -250,13 +266,13 @@ function renderExpro() {
   const sy = scrollY;   // redrawing briefly shortens the page, which made the browser jump to the top; put the scroll back after
   xpChores();
   const today = xpToday(), wk = xpWeek(xpDate), fmt = (k, o) => new Date(k + 'T12:00').toLocaleDateString(undefined, o);
-  const lbl = xpView === 'month' ? fmt(xpDate, {month: 'long', year: 'numeric'}) : `${fmt(wk[0], {month: 'short', day: 'numeric'})} - ${fmt(wk[6], {month: 'short', day: 'numeric'})}`;
+  const lbl = xpView === 'month' ? fmt(xpDate, {month: 'long', year: 'numeric'}) : xpView === 'day' ? fmt(xpDate, {weekday: 'long', month: 'short', day: 'numeric'}) : `${fmt(wk[0], {month: 'short', day: 'numeric'})} - ${fmt(wk[6], {month: 'short', day: 'numeric'})}`;
   const tab = (v, l) => `<button class="tag ${xpView === v ? 'on' : ''}" data-act="xpview" data-v="${v}">${l}</button>`, cal = xpView !== 'domains';
   el.innerHTML = `<div class="xpro">
     <div class="xphead">
       <div class="xpdate"><button class="ib" data-act="xpday" data-v="-1" aria-label="Back">&larr;</button><b>${esc(lbl)}</b><button class="ib" data-act="xpday" data-v="1" aria-label="Forward">&rarr;</button>${xpRangeDays().includes(today) ? '' : '<button class="link" data-act="xpday" data-v="0">Today</button>'}</div>
-      <div class="xptabs">${tab('week', 'Week')}${tab('month', 'Month')}${tab('domains', 'Domains')}</div>
-      ${xpView === 'week' ? `<label class="xpdepth">3D <input type="range" id="xpDepth" min="0" max="16" value="${xpDepth()}"></label>` : ''}
+      <div class="xptabs">${tab('day', 'Day')}${tab('week', 'Week')}${tab('month', 'Month')}${tab('domains', 'Domains')}</div>
+      ${xpTimed() ? `<label class="xpdepth">3D <input type="range" id="xpDepth" min="0" max="16" value="${xpDepth()}"></label>` : ''}
     </div>
     ${cal ? `<div class="xptop"><div class="xpmeters" id="xpMeters"></div><div class="xptray" id="xpTray"></div></div>
       <div class="xpbody"><div class="xpcal${xpView === 'month' ? ' month' : ''}" id="xpCal"></div><aside class="xpside" id="xpSide"></aside></div>`
@@ -293,7 +309,7 @@ const xpBlock3d = (o, cls, attrs, extra = '') => {
 };
 function xpDrawTray() {
   const el = $('xpTray'); if (!el) return;
-  const days = new Set(xpRangeDays()), loose = xpTasks().filter(t => !t.done && t.start == null && (!t.day || days.has(t.day)));
+  const days = new Set(xpRangeDays()), loose = xpTasks().filter(t => !t.done && !t.skipped && t.start == null && (!t.day || days.has(t.day)));
   const g = xpDrag && xpDrag.mode === 'tpl' && xpDrag.gridAt != null ? xpDrag : null;
   let tp = xpTpls(xpChest);
   if (g && !xpChest) { const it = tp.find(x => x.id === g.id); tp = tp.filter(x => x !== it); tp.splice(g.gridAt, 0, it); }   // live preview of the new order
@@ -301,7 +317,7 @@ function xpDrawTray() {
   const nArch = xpTpls(true).length;
   el.innerHTML = `${loose.length ? `<div class="xploose"><span>NO TIME YET</span>${loose.map(t => xpBlock3d(t, 'xpt sm', 'data-xg="tray"',
       `${t.day ? `<em>${new Date(t.day + 'T12:00').toLocaleDateString(undefined, {weekday: 'short', day: 'numeric'})}</em>` : ''}${(t.missed || []).length ? `<em>pushed back ${t.missed.length}x</em>` : ''}`)).join('')}</div>` : ''}
-    <div class="xpgw"><div class="xpgrid" id="xpGrid">${tp.map(t => xpBlock3d(t, 'xpt' + (g && g.id === t.id ? ' lifted' : ''), 'data-xg="tpl"')).join('') || `<span class="mute">${xpChest ? 'The chest is empty.' : 'No tasks yet.'}</span>`}</div>
+    <div class="xpgw"><div class="xpgrid" id="xpGrid">${tp.map(t => { const ow = xpOwed(t); return xpBlock3d(t, 'xpt' + (g && g.id === t.id ? ' lifted' : '') + (ow.length ? ' owe' : ''), `data-xg="tpl"${ow.length ? ` title="Not done: ${esc(ow.map(x => xpWhen(x.skipped) + (x.skipped.why ? ' (' + x.skipped.why + ')' : '')).join('; '))}"` : ''}`, ow.length ? `<u class="xpowe">MAKE UP${ow.length > 1 ? ' ' + ow.length : ''}</u>` : ''); }).join('') || `<span class="mute">${xpChest ? 'The chest is empty.' : 'No tasks yet.'}</span>`}</div>
       <button class="xpchest${xpChest ? ' open' : ''}${xpDrag && xpDrag.overChest ? ' drop' : ''}" id="xpChest" data-act="xpchest">${xpChest ? 'BACK TO<br>TASKS' : `CHEST<br><small>${nArch}</small>`}</button></div>
     ${xpChest ? '' : `<div class="xpnew"><input id="xpNT" placeholder="New task" maxlength="80" autocomplete="off">
       ${xpNewDom ? '<input id="xpNDn" class="xpnd" placeholder="New domain" maxlength="30" autocomplete="off">' : xpDomSelect(c.lastDomain || xpDomains()[0], 'id="xpND"')}
@@ -314,7 +330,7 @@ function xpDrawCal() {
   const el = $('xpCal'); if (!el) return;
   if (xpView === 'month') return xpDrawMonth(el);
   const days = xpRangeDays(), k = xpDepth() * .6 * Math.SQRT1_2, PX = XP_PX, pad = Math.round(5 * k) + 8, gut = 50, head = 34;
-  const W = el.clientWidth || 700, colW = (W - gut - 4) / 7, y = t => head + pad + t * PX, today = xpToday();
+  const W = el.clientWidth || 700, colW = (W - gut - 4) / days.length, y = t => head + pad + t * PX, today = xpToday();
   const keyNow = days[0], old = xpScroll.key === keyNow ? xpScroll.top : null;
   let h = `<div class="xpwh" style="height:${head}px;padding-left:${gut}px">${days.map(d => `<button class="${d === xpDate ? 'on' : ''}${d === today ? ' today' : ''}" data-act="xpsetday" data-v="${d}" style="width:${colW}px">${new Date(d + 'T12:00').toLocaleDateString(undefined, {weekday: 'short', day: 'numeric'})}</button>`).join('')}</div>`;
   for (let m = 0; m <= 1440; m += 30) h += `<div class="xph${m % 60 ? ' half' : ''}" style="top:${y(m)}px">${m % 60 || m === 1440 ? '' : `<span>${clock(m)}</span>`}</div>`;
@@ -329,7 +345,7 @@ function xpDrawCal() {
     const first = !x.span || x.idx === 0, last = !x.span || x.idx === x.span - 1;
     const f = xpFaces(xpCol(x.domain), x.kind), small = bh < 30, still = x.cut || x.kind === 'exp' || x.id === '__mini';
     const plan = x.kind === 'task' && x.done && !x.cut && x.t ? `<div class="xpplan" style="height:${x.t.est * PX - 2}px;transform:translate(${e}px,${-e}px)"></div>` : '';
-    const info = [x.kind === 'busy' ? '' : esc(x.domain || ''), `${clock(x.start)}-${clock(x.start + x.len)}`, `effort ${x.effort}`, x.span > 1 ? `day ${x.idx + 1} of ${x.span}` : '', x.t ? xpSubCount(x.t) : ''].filter(Boolean).join(', ');
+    const info = [x.kind === 'busy' ? '' : esc(x.domain || ''), `${clock(x.start)}-${clock(x.start + x.len)}`, `effort ${x.effort}`, x.span > 1 ? `day ${x.idx + 1} of ${x.span}` : '', x.t ? xpSubCount(x.t) : '', x.t && x.t.makeup ? 'make up' : ''].filter(Boolean).join(', ');
     h += `<div class="xpb ${x.kind}${cl ? ' cl' : ''}${cr ? ' cr' : ''}${x.done ? ' done' : ''}${x.ghost ? ' ghost' : ''}${x.lifted ? ' lifted' : ''}${xpSel === x.id ? ' sel' : ''}" data-xid="${x.id}" data-day="${d}" style="left:${bx}px;top:${by}px;width:${w}px;height:${bh}px;z-index:${z++}">
       <svg class="xps" width="1" height="1">${cl ? '' : `<polygon fill="${f.left}" points="0,0 ${e},${-e} ${e},${bh - e} 0,${bh}"/>`}<polygon fill="${f.bot}" points="0,${bh} ${w},${bh} ${w + e},${bh - e} ${e},${bh - e}"/></svg>
       ${plan}<div class="xpf${small ? ' small' : ''}" data-xg="${still ? 'none' : 'move'}" style="transform:translate(${e}px,${-e}px);background:${f.top};color:${ink(f.top)}">
@@ -385,13 +401,13 @@ function xpMiniAdd() {
   const est = xpParse($('xmE').value); if (!est) { flash('Time: try 45m, 1h30, 1:30 or 2h'); $('xmE').focus(); return; }
   const dn = $('xmDn'), domain = dn ? dn.value.trim() : $('xmD').value; if (!domain) { dn.focus(); return; }
   const effort = +$('xmF').value, m = xpMini, tpl = xpTplByTitle(title), id = xpId('t');
-  const saves = [{...xpFromTpl(tpl), id, kind: 'task', is_public: false, title, domain, est, effort, day: m.day, start: m.start, tpl: tpl ? tpl.id : undefined, created: new Date().toISOString()}];
+  const saves = [{...xpFromTpl(tpl), id, kind: 'task', is_public: false, title, domain, est, effort, day: m.day, start: m.start, tpl: tpl ? tpl.id : undefined, makeup: tpl ? xpOwed(tpl)[0]?.id : undefined, created: new Date().toISOString()}];
   if (!tpl) { const n = xpNewTpl({title, domain, est, effort}); saves[0].tpl = n.id; saves.push(n); }   // brand new: it joins the grid, top-left
   const dom = xpAddDomain(domain); if (dom.domains) saves.push({...xpCfg(), ...dom});
   xpMini = null; xpSel = id; xpDrawMini(); xpSave(saves);
 }
 document.addEventListener('dblclick', ev => {
-  if (page !== 'expro' || xpView !== 'week') return;
+  if (page !== 'expro' || !xpTimed()) return;
   const plane = ev.target.closest('#xpPlane'); if (!plane || ev.target.closest('.xpb,.xpwh')) return;
   const geo = $('xpCal')._geo, r = plane.getBoundingClientRect();
   const day = geo.days[Math.max(0, Math.min(6, Math.floor((ev.clientX - r.left - geo.gut) / geo.colW)))];
@@ -419,6 +435,14 @@ function xpDrawSide() {
       <button class="go" data-act="xpdone" ${f.went && f.enjoy ? '' : 'disabled'}>SAVE, +${Math.round(f.min)} EXP</button>
       <button class="link" data-act="xpcancel" style="display:block;margin:10px auto 0">Cancel</button>`;
   }
+  else if (t && xpNotForm && xpNotForm.id === t.id) {
+    const f = xpNotForm;
+    h = `<h3>NOT DONE: ${esc(t.title).toUpperCase()}</h3>
+      <p class="mute">${xpWhen(t)}${t.start != null ? '-' + clock(t.start + xpLen(t)) : ''}</p>
+      <label>What got in the way?</label><input id="xpWhy" value="${esc(f.why)}" maxlength="80" autocomplete="off">
+      <button class="go" data-act="xpnot">BACK TO TASKS</button>
+      <button class="link" data-act="xpcancel" style="display:block;margin:10px auto 0">Cancel</button>`;
+  }
   else if (t) {
     const sh = xpShared(t), r = t.rep && (c.repeats || []).find(x => x.id === t.rep);
     h = `<h3>TASK</h3><input data-xf="title" value="${esc(t.title)}" maxlength="80">
@@ -434,7 +458,7 @@ function xpDrawSide() {
           <div>Time: planned ${sdur(xpEstT(t))}, took ${sdur(t.done.min)} <em>${xpPct(t.done.min, xpEstT(t))}</em></div>
           <div>Effort: planned ${t.effort}, really ${t.done.effort}</div><div>Went ${t.done.went} of 5, enjoyed ${t.done.enjoy} of 5</div></div>
           <button class="link" data-act="xpundo">Undo done</button>`
-        : `<button class="go" data-act="xpdoneopen">DONE</button>`}
+        : `<div class="xpdn"><button class="go" data-act="xpdoneopen">DONE</button>${t.day ? '<button class="go2" data-act="xpnotopen">NOT DONE</button>' : ''}</div>`}
       <div class="xplinks">${sh ? `<a class="link" href="/exp/${sh.num || ''}" data-act="go" data-v="exp/${sh.num || ''}">On EXP</a>` : '<button class="link" data-act="xpshare">Share to EXP</button>'}
         ${t.start != null && !t.done ? '<button class="link" data-act="xpunsched">Take off the calendar</button>' : ''}
         ${r ? '<button class="link" data-act="xpstoprep">Stop repeating</button>' : ''}
@@ -447,6 +471,8 @@ function xpDrawSide() {
       <label>Effort</label>${xpRate('peffort', p.effort)}
       ${xpNotesHtml(p)}
       <p class="mute">Done ${xpTasks().filter(x => x.done && (x.tpl === p.id || key(x.title) === key(p.title))).length} times</p>
+      ${xpOwed(p).length ? `<h3>TO MAKE UP</h3>${xpOwed(p).map(x => `<div class="xpowed"><span>${xpWhen(x.skipped)}${x.skipped.why ? ', ' + esc(x.skipped.why) : ''}</span>
+        <button class="link" data-act="xpback" data-v="${x.id}">Put back</button><button class="link" data-act="xpforgive" data-v="${x.id}">Forget it</button></div>`).join('')}` : ''}
       <div class="xplinks"><button class="link" data-act="xparch">${p.archived ? 'Take out of the chest' : 'Put in the chest'}</button>
         <button class="link" data-act="xpdel" data-v="${p.id}">Delete</button><button class="link" data-act="xpdesel">Close</button></div>`;
   }
@@ -492,7 +518,7 @@ function xpDrawStats() {
   const rows = xpDomains().map(dm => {
     const l = done.filter(t => key(t.domain) === key(dm)), le = E.filter(e => of(e, dm)), est = l.reduce((a, t) => a + xpEstT(t), 0);
     const tmin = l.reduce((a, t) => a + t.done.min, 0), min = tmin + le.reduce((a, e) => a + (e.minutes || 0), 0);
-    const missed = T.filter(t => key(t.domain) === key(dm)).reduce((a, t) => a + (t.missed || []).filter(x => x >= since).length, 0);
+    const missed = T.filter(t => key(t.domain) === key(dm)).reduce((a, t) => a + [...(t.missed || []), ...(t.skipped ? [t.skipped.day] : [])].filter(x => x >= since).length, 0);
     return {dm, n: l.length + le.length, min, share: total ? min / total : 0, went: avg(l.map(t => t.done.went)), enjoy: avg([...l.map(t => t.done.enjoy), ...le.filter(e => e.rating).map(e => e.rating)]),
       effD: avg(l.map(t => t.done.effort - t.effort)), pct: est ? (tmin / est - 1) * 100 : null, missed, tasks: l.length};
   }).filter(r => r.n || r.missed).sort((a, b) => b.min - a.min);
@@ -538,7 +564,7 @@ document.addEventListener('click', ev => {
   if (a === 'xpday') {
     if (v === '0') xpDate = xpToday();
     else if (xpView === 'month') { const z = new Date(xpDate.slice(0, 7) + '-15T12:00'); z.setMonth(z.getMonth() + +v); xpDate = xpKey(z).slice(0, 8) + '01'; }
-    else xpDate = xpShift(xpDate, 7 * v);
+    else xpDate = xpShift(xpDate, (xpView === 'day' ? 1 : 7) * v);
     xpSel = xpDoneForm = xpMini = null; renderExpro();
   }
   else if (a === 'xpview') { xpView = v; xpMini = null; renderExpro(); }
@@ -549,7 +575,7 @@ document.addEventListener('click', ev => {
   else if (a === 'xpchest') { xpChest = !xpChest; xpDrawTray(); }
   else if (a === 'xpminiadd') xpMiniAdd();
   else if (a === 'xpminiclose') { xpMini = null; xpDrawMini(); xpDrawCal(); }
-  else if (a === 'xpsel') { xpSel = v; xpDoneForm = null; xpDrawSide(); xpDrawCal(); }
+  else if (a === 'xpsel') { xpSel = v; xpDoneForm = xpNotForm = null; xpDrawSide(); xpDrawCal(); }
   else if (a === 'xpdesel') { xpSel = xpDoneForm = null; renderExpro(); }
   else if (a === 'xprate') {
     const n = +v, k = b.dataset.k, e = ents().find(x => x.id === xpSel);
@@ -563,7 +589,13 @@ document.addEventListener('click', ev => {
   else if ((a === 'xpsubadd' || a === 'xpsubdel') && (t || p)) xpSubEdit(t || p, a === 'xpsubdel' ? v : null);
   else if (a === 'xpdoneopen' && t) { xpDoneForm = {min: xpEstT(t), effort: t.effort, went: null, enjoy: null}; xpDrawSide(); }
   else if (a === 'xpmin' && xpDoneForm) { xpDoneForm.min = Math.max(5, xpDoneForm.min + +v); xpDrawSide(); }
-  else if (a === 'xpcancel') { xpDoneForm = null; xpDrawSide(); }
+  else if (a === 'xpcancel') { xpDoneForm = xpNotForm = null; xpDrawSide(); }
+  else if (a === 'xpnotopen' && t) { xpDoneForm = null; xpNotForm = {id: t.id, why: xpInTheWay(t).join(', ')}; xpDrawSide(); setTimeout(() => $('xpWhy') && $('xpWhy').focus({preventScroll: true})); }
+  else if (a === 'xpnot' && t) xpNotDone(t, $('xpWhy').value.trim());
+  else if (a === 'xpback' || a === 'xpforgive') {
+    const s = xpTasks().find(x => x.id === v); if (!s) return;
+    xpSave(a === 'xpback' ? {...s, day: s.skipped.day, start: s.skipped.start, skipped: null} : {...s, skipped: {...s.skipped, forgiven: true}}, a === 'xpback' ? 'Back on the calendar' : 'Forgotten');
+  }
   else if (a === 'xpdone' && t && xpDoneForm) {
     const f = xpDoneForm; xpDoneForm = null;
     xpSaveTask(t.id, {done: {...f, day: t.day || xpDate, at: new Date().toISOString()}, day: t.day || xpDate}, `+${Math.round(f.min)} EXP, ${t.title} done`);
@@ -601,6 +633,15 @@ document.addEventListener('click', ev => {
     else { b.dataset.arm = 1; b.textContent = 'remove?'; setTimeout(() => { delete b.dataset.arm; b.textContent = 'remove'; }, 3000); }
   }
 });
+function xpNotDone(t, why) {   // off the calendar, back to its block in the grid, marked to make up
+  xpNotForm = null;
+  const saves = [{...t, skipped: {day: t.day, start: t.start, why, at: new Date().toISOString()}, day: null, start: null}];
+  let tp = all.find(x => x.id === t.tpl && x.kind === 'tasktype') || xpTplByTitle(t.title);
+  if (!tp) { tp = {...xpNewTpl(t), ...xpFromTpl(t)}; saves.push(tp); }
+  else if (tp.archived) saves.push({...tp, archived: false, order: xpNewTpl(tp).order});
+  saves[0].tpl = tp.id; xpSel = tp.id; xpChest = false;
+  xpSave(saves, `"${t.title}" is back in your tasks to make up`);
+}
 function xpSubEdit(o, delId) {   // add the typed subtask, or remove one
   if (delId) return xpSave({...o, subs: (o.subs || []).filter(x => x.id !== delId)});
   const text = ($('xpSubN').value || '').trim(); if (!text) return;
@@ -736,7 +777,7 @@ document.addEventListener('pointerup', () => {
   const g = xpDrag; if (!g) return;
   xpDrag = null;
   const gh = $('xpGhost'); if (gh) gh.remove();
-  if (!g.moved) { xpSel = xpSel === g.id && ['tpl', 'tray'].includes(g.mode) ? null : g.id; xpDoneForm = null; xpDrawSide(); xpDrawCal(); xpDrawTray(); return; }
+  if (!g.moved) { xpSel = xpSel === g.id && ['tpl', 'tray'].includes(g.mode) ? null : g.id; xpDoneForm = xpNotForm = null; xpDrawSide(); xpDrawCal(); xpDrawTray(); return; }
   if (g.mode === 'tpl') {
     const p = all.find(x => x.id === g.id);
     if (g.overChest) return xpSave(xpChest ? {...p, archived: false, order: xpNewTpl(p).order} : {...p, archived: true}, xpChest ? `"${p.title}" is back in your tasks` : `"${p.title}" is in the chest`);
@@ -747,7 +788,7 @@ document.addEventListener('pointerup', () => {
     const at = xpView === 'month' ? (g.overDay ? {day: g.overDay, start: null} : null) : g.over ? {day: g.cur.day, start: g.cur.start} : null;
     if (!at) return renderExpro();
     const id = xpId('t'); xpSel = id;
-    return xpSave({...xpFromTpl(p), id, kind: 'task', is_public: false, title: p.title, domain: p.domain, est: p.est, effort: p.effort, tpl: p.id, ...at, created: new Date().toISOString()});
+    return xpSave({...xpFromTpl(p), id, kind: 'task', is_public: false, title: p.title, domain: p.domain, est: p.est, effort: p.effort, tpl: p.id, makeup: xpOwed(p)[0]?.id, ...at, created: new Date().toISOString()});
   }
   if (g.mode === 'tray') {
     if (xpView === 'month' && g.overDay) xpSaveTask(g.id, {day: g.overDay, start: null});
@@ -762,5 +803,5 @@ document.addEventListener('pointerup', () => {
   else if (g.mode === 'left' || g.mode === 'right') xpSaveTask(g.id, {day: g.cur.day, span: g.cur.span});
   else if (g.mode === 'z') xpSaveTask(g.id, {effort: g.cur.effort});
 });
-window.addEventListener('resize', () => { if (page === 'expro' && xpView === 'week') xpDrawCal(); });
-setInterval(() => { if (page === 'expro' && !xpDrag && !xpMini && xpView === 'week' && xpRangeDays().includes(xpToday())) { xpDrawCal(); xpDrawMeters(); } }, 60e3);   // keep "now" moving
+window.addEventListener('resize', () => { if (page === 'expro' && xpTimed()) xpDrawCal(); });
+setInterval(() => { if (page === 'expro' && !xpDrag && !xpMini && xpTimed() && xpRangeDays().includes(xpToday())) { xpDrawCal(); xpDrawMeters(); } }, 60e3);   // keep "now" moving
