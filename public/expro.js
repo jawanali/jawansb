@@ -6,11 +6,13 @@
      forever. Newest go top-left; drag them to rearrange, or into the CHEST to shelve them (click the chest to see what's in it).
      Dragging one onto the calendar puts a copy of it there. Double-clicking an empty spot on the calendar makes a task right
      there; typing a title you've used before fills in the rest, and a brand-new title also becomes a new block in the grid.
-   - The calendar (Week: Sunday to Saturday; Month) shows 24-hour days. Up and down is time; how far a block sticks out toward
-     you (the Z axis) is effort. Drag a block to move it, its bottom edge to change its time, its corner number for effort.
+   - The calendar (Days: any number of days in a row, starting on any day; Month) shows 24-hour days. Up and down is time; how
+     far a block sticks out toward you (the Z axis) is effort. Pinch or ctrl+scroll (or + and -) zooms the hours, from the whole
+     day down to 10-minute lines; swiping sideways (or the arrow keys) moves a day at a time. Drag a block to move it, its edges
+     to change its time and days, its corner number for effort.
    - BUSY blocks are time that isn't a task (sleep, work, class); they can repeat.
    - ENERGY = effort x hours (2 hours at effort 3 = 6). There's no budget to set: EXPRO counts what you've spent so far and what
-     you've planned, against the most a person can keep up (XP_MAX_DAY, XP_MAX_WEEK below). After XP_LEARN_DAYS days of
+     you've planned for a day, against the most a person can keep up in a day (XP_MAX_DAY below). After XP_LEARN_DAYS days of
      finished things it also knows your own average day and shows it.
    - EXP is the same as on the EXP page: 1 per minute. Finished tasks count toward TOTAL EXP. Domains and EXP Types are one
      list; EXP entries show on the calendar; "Share to EXP" turns a task into an EXP entry (then it's counted once).
@@ -28,11 +30,12 @@ const XP_DOMAINS = ['Work', 'Money', 'Health', 'Home', 'Admin', 'People', 'Famil
 const XP_SNAP = 15;
 const XP_DOWS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const XP_REPEATS = [['once', 'This day only'], ['daily', 'Every day'], ['weekdays', 'Weekdays'], ['weekends', 'Weekends'], ['dow', 'Every ']];
-/* The most energy a person can keep up. A day: about 16 waking hours at an average effort of 3 = 48, so 50; you can do that
-   now and then, not daily. A week: six of those days and one to recover = 300. A month: the week's rate over its days. */
-const XP_MAX_DAY = 50, XP_MAX_WEEK = 300, XP_LEARN_DAYS = 14;
-const XP_PX = .8;   // calendar pixels per minute
-let xpView = 'week', xpDate = null, xpSel = null, xpDoneForm = null, xpNotForm = null, xpRange = 'week', xpDrag = null, xpDepthLive = null;
+/* The most energy a person can keep up in a day: about 16 waking hours at an average effort of 3 = 48, so 50; you can do that
+   now and then, not daily. Everything is counted per day. */
+const XP_MAX_DAY = 50, XP_LEARN_DAYS = 14;
+const XP_PX = .8, XP_PX_MAX = 12;   // calendar pixels per minute: the starting zoom, and the closest (12 = 120px per 10 minutes)
+let xpPx = null, xpN = null, xpStart = null;   // zoom, how many days you see, the first one
+let xpView = 'days', xpDate = null, xpSel = null, xpDoneForm = null, xpNotForm = null, xpRange = 'week', xpDrag = null, xpDepthLive = null;
 let xpNewDom = false, xpChest = false, xpMini = null, xpRolled = '', xpMigrated = false;
 const xpRepMade = new Set();
 const xpScroll = {key: null, top: 0};   // where the calendar is scrolled to, kept across redraws
@@ -43,10 +46,9 @@ const xpKey = d => { const z = new Date(d); z.setMinutes(z.getMinutes() - z.getT
 const xpToday = () => xpKey(new Date());
 const xpShift = (k, n) => { const d = new Date(k + 'T12:00'); d.setDate(d.getDate() + n); return xpKey(d); };
 const xpDow = k => new Date(k + 'T12:00').getDay();
-const xpWeek = k => { const s = xpShift(k, -xpDow(k)); return [0, 1, 2, 3, 4, 5, 6].map(i => xpShift(s, i)); };   // Sunday to Saturday
 const xpMonth = k => { const l = [], p = k.slice(0, 7); for (let d = p + '-01'; d.startsWith(p); d = xpShift(d, 1)) l.push(d); return l; };
-const xpRangeDays = () => xpView === 'month' ? xpMonth(xpDate) : xpView === 'day' ? [xpDate] : xpWeek(xpDate);
-const xpTimed = () => xpView === 'week' || xpView === 'day';   // the views with hours down the side
+const xpRangeDays = () => xpView === 'month' ? xpMonth(xpDate) : Array.from({length: xpN || 7}, (_, i) => xpShift(xpStart || xpToday(), i));
+const xpTimed = () => xpView === 'days';   // the view with hours down the side
 const xpId = p => p + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const xpTasks = () => all.filter(x => x.kind === 'task');
 const xpTpls = (arch = false) => all.filter(x => x.kind === 'tasktype' && !!x.archived === arch).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -61,7 +63,8 @@ const clock = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; const h = Math.
 const sdur = m => (m < 0 ? '-' : '') + dur(Math.abs(Math.round(m)));
 const num1 = n => String(Math.round(n * 10) / 10);
 const xpCost = (min, eff) => min / 60 * eff;
-const xpSnap = m => Math.round(m / XP_SNAP) * XP_SNAP;
+const xpStep = () => (xpPx || XP_PX) >= 4 ? 1 : xpPx >= 2 ? 5 : xpPx >= 1.2 ? 10 : XP_SNAP;   // the closer you zoom, the finer blocks snap (down to 1 minute)
+const xpSnap = m => Math.round(m / xpStep()) * xpStep();
 function xpParse(s) {   // "45", "45m", "1h", "1.5h", "1h30", "1h 30m", "1:30" -> minutes
   s = String(s).trim().toLowerCase(); let m;
   if ((m = s.match(/^(\d+):(\d{1,2})$/))) return +m[1] * 60 + +m[2];
@@ -100,7 +103,6 @@ const xpSubCount = o => (o.subs || []).length ? `${o.subs.filter(x => x.done).le
 const xpNotesHtml = o => `<label>Description</label><textarea data-xnote="1" rows="3" placeholder="Notes">${esc(o.notes || '')}</textarea>
   <label>Subtasks ${xpSubCount(o)}</label><div class="xpsubs">${(o.subs || []).map(x => `<div class="xpsub${x.done ? ' dn' : ''}"><input type="checkbox" data-xsub="${x.id}"${x.done ? ' checked' : ''}><input data-xsubt="${x.id}" value="${esc(x.text)}" maxlength="120"><button class="link" data-act="xpsubdel" data-v="${x.id}">remove</button></div>`).join('')}
   <div class="xpsub"><input id="xpSubN" placeholder="Add a subtask" maxlength="120" autocomplete="off"><button class="go2" data-act="xpsubadd">ADD</button></div></div>`;
-const xpMax = days => days.length === 1 ? XP_MAX_DAY : Math.round(XP_MAX_WEEK / 7 * days.length);
 
 /* --- days and busy blocks --- */
 const xpDay = k => all.find(x => x.id === 'day-' + k) || {id: 'day-' + k, kind: 'day', date: k, busy: []};
@@ -262,16 +264,20 @@ function renderExpro() {
   const el = $('pgExpro'); if (!el || page !== 'expro') return;
   if (!owner) { el.innerHTML = `<p class="mute">${loaded ? 'This page is private.' : 'Loading...'}</p>`; return; }
   if (!loaded) { el.innerHTML = '<p class="mute">Loading...</p>'; return; }
-  xpDate = xpDate || xpToday();
+  xpDate = xpDate || xpToday(); xpStart = xpStart || xpDate;
+  if (xpPx == null) xpPx = xpCfg().calPx || XP_PX;
+  if (xpN == null) xpN = xpCfg().calDays || 7;
   const sy = scrollY;   // redrawing briefly shortens the page, which made the browser jump to the top; put the scroll back after
   xpChores();
-  const today = xpToday(), wk = xpWeek(xpDate), fmt = (k, o) => new Date(k + 'T12:00').toLocaleDateString(undefined, o);
-  const lbl = xpView === 'month' ? fmt(xpDate, {month: 'long', year: 'numeric'}) : xpView === 'day' ? fmt(xpDate, {weekday: 'long', month: 'short', day: 'numeric'}) : `${fmt(wk[0], {month: 'short', day: 'numeric'})} - ${fmt(wk[6], {month: 'short', day: 'numeric'})}`;
+  const today = xpToday(), rd = xpRangeDays(), fmt = (k, o) => new Date(k + 'T12:00').toLocaleDateString(undefined, o), md = {weekday: 'short', month: 'short', day: 'numeric'};
+  const lbl = xpView === 'month' ? fmt(xpDate, {month: 'long', year: 'numeric'}) : rd.length === 1 ? fmt(rd[0], {weekday: 'long', month: 'short', day: 'numeric'}) : `${fmt(rd[0], md)} - ${fmt(rd[rd.length - 1], md)}`;
   const tab = (v, l) => `<button class="tag ${xpView === v ? 'on' : ''}" data-act="xpview" data-v="${v}">${l}</button>`, cal = xpView !== 'domains';
   el.innerHTML = `<div class="xpro">
     <div class="xphead">
       <div class="xpdate"><button class="ib" data-act="xpday" data-v="-1" aria-label="Back">&larr;</button><b>${esc(lbl)}</b><button class="ib" data-act="xpday" data-v="1" aria-label="Forward">&rarr;</button>${xpRangeDays().includes(today) ? '' : '<button class="link" data-act="xpday" data-v="0">Today</button>'}</div>
-      <div class="xptabs">${tab('day', 'Day')}${tab('week', 'Week')}${tab('month', 'Month')}${tab('domains', 'Domains')}</div>
+      <div class="xptabs">${tab('days', 'Days')}${tab('month', 'Month')}${tab('domains', 'Domains')}</div>
+      ${xpTimed() ? `<div class="xpctl"><span>DAYS</span><button class="ib" data-act="xpn" data-v="-1" aria-label="Fewer days">-</button><b>${xpN}</b><button class="ib" data-act="xpn" data-v="1" aria-label="More days">+</button></div>
+        <div class="xpctl"><span>ZOOM</span><button class="ib" data-act="xpzoom" data-v="out" aria-label="Zoom out">-</button><button class="ib" data-act="xpzoom" data-v="in" aria-label="Zoom in">+</button><button class="link" data-act="xpzoom" data-v="fit">Whole day</button></div>` : ''}
       ${xpTimed() ? `<label class="xpdepth">3D <input type="range" id="xpDepth" min="0" max="16" value="${xpDepth()}"></label>` : ''}
     </div>
     ${cal ? `<div class="xptop"><div class="xpmeters" id="xpMeters"></div><div class="xptray" id="xpTray"></div></div>
@@ -286,14 +292,16 @@ function renderExpro() {
 
 function xpDrawMeters() {
   const m = $('xpMeters'); if (!m) return;
-  const days = xpRangeDays(), s = xpTotals(days), max = xpMax(days), avg = xpAverage(), tLeft = s.free - s.used, today = xpToday();
-  const pct = v => Math.min(100, v / max * 100), over = s.planE > max, avgR = avg.day && avg.day * days.length;
-  m.innerHTML = `<div class="xpm"><span>TIME</span><div class="xpbar${tLeft < 0 ? ' over' : ''}"><i style="width:${s.free > 0 ? Math.min(100, s.used / s.free * 100) : 100}%"></i></div>
-      <div><b>${sdur(s.used)}</b> of ${sdur(s.free)} free, <b class="${tLeft < 0 ? 'neg' : ''}">${tLeft < 0 ? sdur(-tLeft) + ' over' : sdur(tLeft) + ' left'}</b></div></div>
-    <div class="xpm"><span>ENERGY</span><div class="xpbar e${over ? ' over' : ''}"><i class="pl" style="width:${pct(s.planE)}%"></i><i class="sp" style="width:${pct(s.spentE)}%"></i>${avgR ? `<u style="left:${pct(avgR)}%"></u>` : ''}</div>
+  // everything here is one day: the one you picked (click a day's name on the calendar)
+  const s = xpTotals([xpDate]), max = XP_MAX_DAY, avg = xpAverage(), booked = s.busyMin + s.used, tLeft = 1440 - booked, today = xpToday();
+  const pct = v => Math.min(100, v / max * 100), over = s.planE > max, avgR = avg.day;
+  const dn = xpDate === today ? 'TODAY' : new Date(xpDate + 'T12:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}).toUpperCase();
+  m.innerHTML = `<div class="xpm"><span>TIME, ${dn}</span><div class="xpbar${tLeft < 0 ? ' over' : ''}"><i style="width:${Math.min(100, booked / 1440 * 100)}%"></i></div>
+      <div><b>${sdur(booked)}</b> booked, <b class="${tLeft < 0 ? 'neg' : ''}">${tLeft < 0 ? sdur(-tLeft) + ' double-booked' : sdur(tLeft) + ' free'}</b></div></div>
+    <div class="xpm"><span>ENERGY, ${dn}</span><div class="xpbar e${over ? ' over' : ''}"><i class="pl" style="width:${pct(s.planE)}%"></i><i class="sp" style="width:${pct(s.spentE)}%"></i>${avgR ? `<u style="left:${pct(avgR)}%"></u>` : ''}</div>
       <div><b>${num1(s.spentE)}</b> spent so far, <b class="${over ? 'neg' : ''}">${num1(s.planE)}</b> planned, max ${max}</div>
       <div class="mute">${avg.day ? `Your average: ${num1(avg.day)} a day (${Math.round(avg.day / XP_MAX_DAY * 100)}% of max)` : `Learning your average: ${avg.n} of ${XP_LEARN_DAYS} days`}</div></div>
-    <div class="xpm"><span>EXP</span><div>Today <b>${xpExpOn([today]).toLocaleString()}</b>, this week <b>${xpExpOn(xpWeek(today)).toLocaleString()}</b>, this month <b>${xpExpOn(xpMonth(today)).toLocaleString()}</b></div></div>`;
+    <div class="xpm"><span>EXP</span><div>${xpDate === today ? '' : `${dn.charAt(0) + dn.slice(1).toLowerCase()} <b>${xpExpOn([xpDate]).toLocaleString()}</b>, `}Today <b>${xpExpOn([today]).toLocaleString()}</b>, this month <b>${xpExpOn(xpMonth(today)).toLocaleString()}</b></div></div>`;
 }
 
 // a block's three visible faces: the front (raised by its effort), its left side and its bottom
@@ -330,11 +338,13 @@ function xpDrawTray() {
 function xpDrawCal() {
   const el = $('xpCal'); if (!el) return;
   if (xpView === 'month') return xpDrawMonth(el);
-  const days = xpRangeDays(), k = xpDepth() * .6 * Math.SQRT1_2, PX = XP_PX, pad = Math.round(5 * k) + 8, gut = 50, head = 34;
+  const days = xpRangeDays(), k = xpDepth() * .6 * Math.SQRT1_2, PX = xpPx = Math.max(xpPxMin(), Math.min(XP_PX_MAX, xpPx || XP_PX)), pad = Math.round(5 * k) + 8, gut = 50, head = 34;
   const W = el.clientWidth || 700, colW = (W - gut - 4) / days.length, y = t => head + pad + t * PX, today = xpToday();
-  const keyNow = days[0], old = xpScroll.key === keyNow ? xpScroll.top : null;
-  let h = `<div class="xpwh" style="height:${head}px;padding-left:${gut}px">${days.map(d => `<button class="${d === xpDate ? 'on' : ''}${d === today ? ' today' : ''}" data-act="xpsetday" data-v="${d}" style="width:${colW}px">${new Date(d + 'T12:00').toLocaleDateString(undefined, {weekday: 'short', day: 'numeric'})}</button>`).join('')}</div>`;
-  for (let m = 0; m <= 1440; m += 30) h += `<div class="xph${m % 60 ? ' half' : ''}" style="top:${y(m)}px">${m % 60 || m === 1440 ? '' : `<span>${clock(m)}</span>`}</div>`;
+  const keyNow = 'cal', old = xpScroll.key === keyNow ? xpScroll.top : null;
+  let h = `<div class="xpwh" style="height:${head}px;padding-left:${gut}px">${days.map(d => `<button class="${d === xpDate ? 'on' : ''}${d === today ? ' today' : ''}" data-act="xpsetday" data-v="${d}" style="width:${colW}px" title="${xpDayTip(d)}">${new Date(d + 'T12:00').toLocaleDateString(undefined, {weekday: colW < 60 ? 'narrow' : 'short', day: 'numeric'})}${xpDayBar(d)}</button>`).join('')}</div>`;
+  // hour lines: as you zoom in they go to every 30, 15, then 10 minutes (labels need about 36px between them)
+  const step = [10, 15, 30, 60, 120, 180, 240].find(v => v * PX >= 36) || 240, minor = step >= 20 && step / 2 * PX >= 14 ? step / 2 : 0;
+  for (let m = 0; m <= 1440; m += minor || step) h += `<div class="xph${m % step ? ' half' : ''}" style="top:${y(m)}px">${m % step || m === 1440 ? '' : `<span>${clock(m)}</span>`}</div>`;
   days.forEach((d, i) => { h += `<div class="xpcol${d === xpDate ? ' on' : ''}" style="left:${gut + i * colW}px;width:${colW}px;top:${head}px"></div>`; });
   const ti = days.indexOf(today);
   if (ti >= 0) { const n = new Date(); h += `<div class="xpnow" style="top:${y(n.getHours() * 60 + n.getMinutes())}px;left:${gut + ti * colW}px;width:${colW}px"></div>`; }
@@ -342,7 +352,7 @@ function xpDrawCal() {
   days.forEach((d, i) => xpLanes(xpItemsFor(d)).sort((a, b) => a.start - b.start || b.lane - a.lane).forEach(x => {
     // a task running several days: its pieces reach the column edges so they read as one block
     const lw = colW / x.lanes, e = x.effort * k, ls = gut + i * colW + x.lane * lw, cl = x.span > 1 && x.idx > 0, cr = x.span > 1 && x.idx < x.span - 1;
-    const fl = ls + (cl ? 0 : 2 + e), fr = ls + lw - (cr ? 0 : 2), w = Math.max(20, fr - fl), bx = fl - e, by = y(x.start), bh = Math.max(12, x.len * PX - 2);
+    const fl = ls + (cl ? 0 : 2 + e), fr = ls + lw - (cr ? 0 : 2), w = Math.max(20, fr - fl), bx = fl - e, by = y(x.start), bh = Math.max(6, x.len * PX - 2);
     const first = !x.span || x.idx === 0, last = !x.span || x.idx === x.span - 1;
     const f = xpFaces(xpCol(x.domain), x.kind), small = bh < 30, still = x.cut || x.kind === 'exp' || x.id === '__mini';
     const plan = x.kind === 'task' && x.done && !x.cut && x.t ? `<div class="xpplan" style="height:${x.t.est * PX - 2}px;transform:translate(${e}px,${-e}px)"></div>` : '';
@@ -356,13 +366,64 @@ function xpDrawCal() {
   el.innerHTML = `<div class="xpplane" id="xpPlane" style="height:${head + pad + 1440 * PX + 16}px">${h}</div>`;
   el._geo = {pad, gut, colW, PX, days, head};
   xpScroll.key = keyNow;
-  if (old != null) el.scrollTop = old;   // keep your place when redrawing; a new week starts near now (or its first task, or 7am)
+  if (old != null) el.scrollTop = old;   // keep your place when redrawing; the first time, start near now (or the first task, or 7am)
   else {
     const firsts = days.flatMap(d => xpItemsFor(d).filter(x => x.kind !== 'busy').map(x => x.start)), n = new Date();
     el.scrollTop = Math.max(0, y(ti >= 0 ? n.getHours() * 60 + n.getMinutes() - 90 : firsts.length ? Math.min(...firsts) - 30 : 7 * 60) - head);
   }
   xpScroll.top = el.scrollTop;
 }
+const xpPxMin = () => { const c = $('xpCal'); return Math.max(.2, ((c && c.clientHeight) || 600) - 34 - 40) / 1440; };   // the whole day fits
+function xpDayBar(d) {   // under each day's name: that day's planned energy against the daily max
+  const s = xpTotals([d]); return s.planE ? `<i class="${s.planE > XP_MAX_DAY ? 'over' : ''}" style="width:${Math.min(100, s.planE / XP_MAX_DAY * 100)}%"></i>` : '';
+}
+function xpDayTip(d) { const s = xpTotals([d]), b = s.busyMin + s.used; return `${sdur(b)} booked, ${1440 - b < 0 ? sdur(b - 1440) + ' double-booked' : sdur(1440 - b) + ' free'}. Energy ${num1(s.planE)} of ${XP_MAX_DAY}`; }
+/* --- zoom and moving through days --- */
+let xpZoomF = 1, xpZoomY = null, xpZoomRaf = 0, xpSwipe = 0, xpSwipeT = 0, xpViewT = 0;
+function xpZoom(f, cy) {   // zoom the hours, keeping the time under the pointer (or the middle) where it is
+  xpZoomF *= f; xpZoomY = cy;
+  if (xpZoomRaf) return;
+  xpZoomRaf = requestAnimationFrame(() => {
+    xpZoomRaf = 0;
+    const cal = $('xpCal'), g = cal && cal._geo; if (!g) return;
+    const box = cal.getBoundingClientRect(), off = (xpZoomY == null ? box.top + cal.clientHeight / 2 : xpZoomY) - box.top;
+    const m = (cal.scrollTop + off - g.head - g.pad) / g.PX;
+    xpPx = Math.max(xpPxMin(), Math.min(XP_PX_MAX, g.PX * xpZoomF)); xpZoomF = 1;
+    xpDrawCal();
+    cal.scrollTop = m * xpPx + g.head + g.pad - off; xpScroll.top = cal.scrollTop;
+    xpSaveView();
+  });
+}
+function xpShiftDays(n) {   // move the days you see; the picked day stays among them
+  const l = xpRangeDays(); xpStart = xpShift(l[0], n);
+  const last = xpShift(xpStart, xpN - 1);
+  if (xpDate < xpStart) xpDate = xpStart; else if (xpDate > last) xpDate = last;
+  xpMini = null; renderExpro();
+}
+function xpSetN(n) {
+  xpN = Math.max(1, Math.min(14, n));
+  const last = xpShift(xpStart, xpN - 1); if (xpDate > last) xpDate = last;
+  xpMini = null; renderExpro(); xpSaveView();
+}
+function xpSaveView() {   // remember your zoom and number of days (quietly, a moment after you stop)
+  clearTimeout(xpViewT);
+  xpViewT = setTimeout(() => {
+    const c = {...xpCfg(), calPx: Math.round(xpPx * 1000) / 1000, calDays: xpN}, i = all.findIndex(x => x.id === 'exprocfg');
+    if (i < 0) all.push(c); else all[i] = c;
+    sb.from('items').upsert([row(c)]);
+  }, 1000);
+}
+document.addEventListener('wheel', ev => {
+  if (page !== 'expro' || !xpTimed() || !ev.target.closest || !ev.target.closest('#xpCal')) return;
+  if (ev.ctrlKey || ev.metaKey) { ev.preventDefault(); xpZoom(Math.exp(-Math.max(-60, Math.min(60, ev.deltaY)) * .01), ev.clientY); return; }   // pinch, or ctrl+scroll
+  if (ev.altKey) { ev.preventDefault(); if (Math.abs(ev.deltaY) > 4) xpSetN(xpN + Math.sign(ev.deltaY)); return; }   // option+scroll: more or fewer days
+  if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {   // swipe sideways: a day at a time
+    ev.preventDefault();
+    const now = Date.now(); if (now - xpSwipeT > 400) xpSwipe = 0; xpSwipeT = now;
+    xpSwipe += ev.deltaX;
+    if (Math.abs(xpSwipe) > 90) { xpShiftDays(Math.sign(xpSwipe)); xpSwipe = 0; }
+  }
+}, {passive: false});
 function xpDrawMonth(el) {
   const days = xpMonth(xpDate), first = xpShift(days[0], -xpDow(days[0])), today = xpToday(), cells = [];
   for (let d = first; d <= days[days.length - 1] || cells.length % 7; d = xpShift(d, 1)) cells.push(d);
@@ -411,8 +472,8 @@ document.addEventListener('dblclick', ev => {
   if (page !== 'expro' || !xpTimed()) return;
   const plane = ev.target.closest('#xpPlane'); if (!plane || ev.target.closest('.xpb,.xpwh')) return;
   const geo = $('xpCal')._geo, r = plane.getBoundingClientRect();
-  const day = geo.days[Math.max(0, Math.min(6, Math.floor((ev.clientX - r.left - geo.gut) / geo.colW)))];
-  const start = Math.max(0, Math.min(1440 - XP_SNAP, Math.floor((ev.clientY - r.top - geo.head - geo.pad) / geo.PX / XP_SNAP) * XP_SNAP));
+  const day = geo.days[Math.max(0, Math.min(geo.days.length - 1, Math.floor((ev.clientX - r.left - geo.gut) / geo.colW)))], st = Math.max(5, xpStep());
+  const start = Math.max(0, Math.min(1440 - st, Math.floor((ev.clientY - r.top - geo.head - geo.pad) / geo.PX / st) * st));
   const c = xpCfg();
   xpMini = {day, start, x: ev.clientX, y: ev.clientY, domain: c.lastDomain || xpDomains()[0], est: xpParse(c.lastTime || '') || 30, effort: c.lastEffort || 3};
   xpSel = null; xpDrawMini(); xpDrawCal(); xpDrawSide();
@@ -495,7 +556,7 @@ function xpDrawSide() {
     const s = xpTotals([xpDate]), busy = xpBusyOn(xpDate).sort((a, b) => a.start - b.start), ideas = xpRepeatIdeas();
     const offCal = xpTasks().filter(x => x.done && x.done.day === xpDate && x.start == null);
     h = `<h3>${esc(new Date(xpDate + 'T12:00').toLocaleDateString(undefined, {weekday: 'long', month: 'short', day: 'numeric'})).toUpperCase()}</h3>
-      <div class="xpdaysum"><div><b>${sdur(s.used)}</b> planned of ${sdur(s.free)} free</div><div><b>${num1(s.spentE)}</b> energy spent, ${num1(s.planE)} planned, max ${XP_MAX_DAY}</div><div><b>${xpExpOn([xpDate])}</b> EXP</div></div>
+      <div class="xpdaysum"><div><b>${sdur(s.busyMin + s.used)}</b> booked, <b>${1440 - s.busyMin - s.used < 0 ? sdur(s.busyMin + s.used - 1440) + '</b> double-booked' : sdur(1440 - s.busyMin - s.used) + '</b> free'}</div><div><b>${num1(s.spentE)}</b> energy spent, ${num1(s.planE)} planned, max ${XP_MAX_DAY}</div><div><b>${xpExpOn([xpDate])}</b> EXP</div></div>
       <h3>BUSY</h3>
       ${busy.map(x => `<button class="tag xprow" data-act="xpsel" data-v="${x.id}">${esc(x.label || 'Busy')} <span>${clock(x.start)}-${clock(x.start + x.len)}${x.rule ? ', ' + xpRepOf(x).toLowerCase() : ''}</span></button>`).join('')}
       <div class="xpbadd"><input id="xpBL" placeholder="Sleep, work..." maxlength="60"><input id="xpBF" type="time" value="23:00"><input id="xpBT" type="time" value="07:00">
@@ -563,14 +624,19 @@ document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-act^="xp"]'); if (!b) return;
   const a = b.dataset.act, v = b.dataset.v, d = xpDay(xpDate), c = xpCfg(), t = xpTasks().find(x => x.id === xpSel), p = all.find(x => x.id === xpSel && x.kind === 'tasktype');
   if (a === 'xpday') {
-    if (v === '0') xpDate = xpToday();
+    if (v === '0') { xpDate = xpStart = xpToday(); }
     else if (xpView === 'month') { const z = new Date(xpDate.slice(0, 7) + '-15T12:00'); z.setMonth(z.getMonth() + +v); xpDate = xpKey(z).slice(0, 8) + '01'; }
-    else xpDate = xpShift(xpDate, (xpView === 'day' ? 1 : 7) * v);
+    else return xpShiftDays(+v);
     xpSel = xpDoneForm = xpMini = null; renderExpro();
   }
+  else if (a === 'xpn') xpSetN(xpN + +v);
+  else if (a === 'xpzoom') {
+    if (v === 'fit') { xpPx = xpPxMin(); xpDrawCal(); $('xpCal').scrollTop = 0; xpSaveView(); }
+    else xpZoom(v === 'in' ? 1.6 : 1 / 1.6);
+  }
   else if (a === 'xpview') { xpView = v; xpMini = null; renderExpro(); }
-  else if (a === 'xpsetday') { xpDate = v; xpSel = xpDoneForm = null; xpDrawCal(); xpDrawSide(); }
-  else if (a === 'xpgoday') { xpDate = v; xpView = 'week'; xpSel = xpDoneForm = null; renderExpro(); }
+  else if (a === 'xpsetday') { xpDate = v; xpSel = xpDoneForm = null; xpDrawCal(); xpDrawSide(); xpDrawMeters(); }
+  else if (a === 'xpgoday') { xpDate = v; if (!xpRangeDays().includes(v) || xpView !== 'days') { xpView = 'days'; if (!xpRangeDays().includes(v)) xpStart = v; } xpSel = xpDoneForm = null; renderExpro(); }
   else if (a === 'xprange') { xpRange = v; xpDrawStats(); }
   else if (a === 'xpadd') xpAdd();
   else if (a === 'xpchest') { xpChest = !xpChest; xpDrawTray(); }
@@ -668,6 +734,11 @@ document.addEventListener('keydown', ev => {
   if (ev.key === 'Enter' && ev.target.id === 'xpNewDom') { ev.preventDefault(); document.querySelector('[data-act="xpdomadd"]').click(); }
   if (ev.key === 'Escape' && xpMini) { xpMini = null; xpDrawMini(); xpDrawCal(); return; }
   if (ev.key === 'Escape' && (xpSel || xpDoneForm) && !ev.target.closest('input,select')) { xpSel = xpDoneForm = null; renderExpro(); }
+  if (xpTimed() && !xpMini && !ev.target.closest('input,select,textarea') && !ev.metaKey && !ev.ctrlKey) {
+    if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { ev.preventDefault(); xpShiftDays(ev.key === 'ArrowLeft' ? -1 : 1); }
+    else if (ev.key === '+' || ev.key === '=') xpZoom(1.6);
+    else if (ev.key === '-' || ev.key === '_') xpZoom(1 / 1.6);
+  }
 });
 document.addEventListener('input', ev => {
   if (page !== 'expro') return;
@@ -752,25 +823,25 @@ document.addEventListener('pointermove', ev => {
     xpGhost(ev, g, false); xpDrawMonth(cal); return;
   }
   const geo = cal._geo, box = cal.getBoundingClientRect(), r = $('xpPlane').getBoundingClientRect();
-  const colAt = () => geo.days[Math.max(0, Math.min(6, Math.floor((ev.clientX - r.left - geo.gut) / geo.colW)))];
+  const colAt = () => geo.days[Math.max(0, Math.min(geo.days.length - 1, Math.floor((ev.clientX - r.left - geo.gut) / geo.colW)))];
   if (['tray', 'tpl'].includes(g.mode)) {
     g.over = ev.clientX > box.left && ev.clientX < box.right && ev.clientY > box.top + geo.head && ev.clientY < box.bottom;
-    g.cur = {day: colAt(), start: Math.max(0, Math.min(1440 - XP_SNAP, xpSnap((ev.clientY - r.top - geo.head - geo.pad) / geo.PX - 10))), len: g.item.len, effort: g.item.effort};
+    g.cur = {day: colAt(), start: Math.max(0, Math.min(1440 - xpStep(), xpSnap((ev.clientY - r.top - geo.head - geo.pad) / geo.PX - 10))), len: g.item.len, effort: g.item.effort};
     xpGhost(ev, g, g.over);
   }
   else if (g.mode === 'move') {
     g.toTray = g.item.kind === 'task' && !!(under && under.closest('#xpTray'));
-    g.cur.start = Math.max(0, Math.min(1440 - XP_SNAP, xpSnap(g.item.start + dy / geo.PX)));
+    g.cur.start = Math.max(0, Math.min(1440 - xpStep(), xpSnap(g.item.start + dy / geo.PX)));
     if (g.item.kind === 'task') g.cur.day = xpShift(g.item.t.day, xpGap(g.day0, colAt()));
     $('xpTray').classList.toggle('drop', g.toTray);
   }
   else if (g.mode === 'top') {   // top edge: the start moves, the end stays put
-    const end = g.item.start + g.item.len, s = Math.max(0, Math.min(end - XP_SNAP, xpSnap(g.item.start + dy / geo.PX)));
+    const end = g.item.start + g.item.len, s = Math.max(0, Math.min(end - xpStep(), xpSnap(g.item.start + dy / geo.PX)));
     g.cur.start = s; g.cur.len = end - s;
   }
   else if (g.mode === 'left') { const lastD = xpLast(g.item.t), d = colAt() > lastD ? lastD : colAt(); g.cur.day = d; g.cur.span = xpGap(d, lastD) + 1; }
   else if (g.mode === 'right') { const d = colAt() < g.item.t.day ? g.item.t.day : colAt(); g.cur.span = xpGap(g.item.t.day, d) + 1; }
-  else if (g.mode === 'len') g.cur.len = Math.max(XP_SNAP, Math.min(1440, xpSnap(g.item.len + dy / geo.PX)));
+  else if (g.mode === 'len') g.cur.len = Math.max(xpStep(), Math.min(1440, xpSnap(g.item.len + dy / geo.PX)));
   else if (g.mode === 'z') g.cur.effort = Math.max(g.item.kind === 'busy' ? 0 : 1, Math.min(5, Math.round(g.item.effort + (dx - dy) / Math.SQRT2 / Math.max(3, xpDepth() * .6))));
   if (!['tray', 'tpl'].includes(g.mode) || g.over) { if (ev.clientY < box.top + geo.head + 30) cal.scrollTop -= 14; else if (ev.clientY > box.bottom - 30) cal.scrollTop += 14; }   // near the edge: scroll
   xpDrawCal(); xpDrawMeters();
