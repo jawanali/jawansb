@@ -33,8 +33,13 @@ const XP_REPEATS = [['once', 'This day only'], ['daily', 'Every day'], ['weekday
 /* The most energy a person can keep up in a day: about 16 waking hours at an average effort of 3 = 48, so 50; you can do that
    now and then, not daily. Everything is counted per day. */
 const XP_MAX_DAY = 50, XP_LEARN_DAYS = 14;
+/* SLEEP: anything called sleep (a busy block, a task, an EXP entry or its type). It costs no energy and isn't "booked" time.
+   A day's night is from 3pm the day before to 3pm that day. The goal is XP_SLEEP (7h 30m); less than that lowers the day's
+   max energy in step (6h = 80%), more lowers it half as fast (9h = 90%). Real sleep (EXP entries, finished tasks) counts over
+   planned sleep. On the calendar, hours everyone in view is asleep (and nothing else is on) fold down to a thin band. */
+const XP_SLEEP = 450, XP_FOLD = 26;
 const XP_PX = .8, XP_PX_MAX = 12;   // calendar pixels per minute: the starting zoom, and the closest (12 = 120px per 10 minutes)
-let xpPx = null, xpN = null, xpStart = null;   // zoom, how many days you see, the first one
+let xpPx = null, xpN = null, xpStart = null, xpUnfold = false;   // zoom, how many days you see, the first one
 let xpView = 'days', xpDate = null, xpSel = null, xpDoneForm = null, xpNotForm = null, xpRange = 'week', xpDrag = null, xpDepthLive = null;
 let xpNewDom = false, xpChest = false, xpMini = null, xpRolled = '', xpMigrated = false;
 const xpRepMade = new Set();
@@ -99,6 +104,11 @@ function xpInTheWay(t) {   // what else was on the calendar while this task was 
   return (l.some(x => !x[1]) ? l.filter(x => !x[1]) : l).map(x => x[0]);   // things that really happened first
 }
 const xpSat = d => d.sat ?? ((d.went || 0) + (d.enjoy || 0)) / ((d.went ? 1 : 0) + (d.enjoy ? 1 : 0) || 1);   // one satisfaction score; older ones average their two
+// time you enter: hours and minutes, two fields
+const xpHM = (min, attrs) => `<span class="xphm"><label><input type="number" min="0" max="99" ${attrs} data-u="h" value="${Math.floor((min || 0) / 60)}"> hours</label><label><input type="number" min="0" max="59" ${attrs} data-u="m" value="${Math.round((min || 0) % 60)}"> minutes</label></span>`;
+const xpReadHM = el => { const b = el && el.closest('.xphm'); if (!b) return 0; return Math.max(0, Math.round((+b.querySelector('[data-u="h"]').value || 0) * 60 + (+b.querySelector('[data-u="m"]').value || 0))); };
+const xpSetHM = (el, min) => { const b = el && el.closest('.xphm'); if (!b) return; b.querySelector('[data-u="h"]').value = Math.floor(min / 60); b.querySelector('[data-u="m"]').value = Math.round(min % 60); };
+const xpLastMin = () => xpCfg().lastMin || xpParse(xpCfg().lastTime || '') || 30;
 const xpSubCount = o => (o.subs || []).length ? `${o.subs.filter(x => x.done).length}/${o.subs.length}` : '';
 // the description box and subtask checklist, shown for calendar tasks and grid blocks alike
 const xpNotesHtml = o => `<label>Description</label><textarea data-xnote="1" rows="3" placeholder="Notes">${esc(o.notes || '')}</textarea>
@@ -226,20 +236,41 @@ function xpLanes(l) {   // overlapping blocks sit side by side
   if (group.length) close();
   return l;
 }
+const xpIsSleep = x => /sleep/i.test(x.title || '') || /sleep/i.test(x.domain || '');
+const xpCostOf = x => xpIsSleep(x) ? 0 : xpCost(x.len, x.effort);
+function xpNight(k) {   // the night before day k (3pm the day before to 3pm that day): {min, real} or null
+  const iv = [];
+  const take = (d, off) => xpItemsFor(d).filter(x => xpIsSleep(x) && !x.ghost && !x.lifted && x.id !== '__mini').forEach(x => {
+    const a = Math.max(x.start + off, -540), b = Math.min(x.start + x.len + off, 900);
+    if (b > a) iv.push([a, b, x.kind === 'exp' || (x.kind === 'task' && x.done)]);
+  });
+  take(xpShift(k, -1), -1440); take(k, 0);
+  if (!iv.length) return null;
+  const real = iv.some(x => x[2]), l = iv.filter(x => x[2] === real).sort((a, b) => a[0] - b[0]);
+  let min = 0, end = -Infinity;
+  l.forEach(([a, b]) => { if (b > end) { min += b - Math.max(a, end); end = b; } });
+  return {min, real};
+}
+function xpMaxOn(k) {   // the most energy for day k, after the night's sleep
+  const n = xpNight(k); if (!n) return {max: XP_MAX_DAY, n};
+  const f = n.min < XP_SLEEP ? Math.max(.3, n.min / XP_SLEEP) : Math.max(.6, 1 - (n.min - XP_SLEEP) / XP_SLEEP * .5);
+  return {max: Math.round(XP_MAX_DAY * f), n};
+}
+const xpSleepTxt = n => !n ? 'no sleep on the calendar' : `${sdur(n.min)} ${n.real ? 'slept' : 'planned'}, ${Math.abs(n.min - XP_SLEEP) < 10 ? 'on goal' : n.min < XP_SLEEP ? sdur(XP_SLEEP - n.min) + ' short' : sdur(n.min - XP_SLEEP) + ' over'}`;
 // energy that has really been spent: busy time and EXP entries that have happened, finished tasks (only the part before now)
 const xpReal = x => x.kind === 'busy' || x.kind === 'exp' || (x.kind === 'task' && x.done);
 function xpTotals(days) {
-  const s = {free: 0, busyMin: 0, used: 0, planE: 0, spentE: 0}, now = new Date(), today = xpToday(), nowMin = now.getHours() * 60 + now.getMinutes();
+  const s = {free: 0, busyMin: 0, used: 0, sleep: 0, planE: 0, spentE: 0}, now = new Date(), today = xpToday(), nowMin = now.getHours() * 60 + now.getMinutes();
   days.forEach(k => {
     xpItemsFor(k).filter(x => !x.lifted && x.id !== '__mini').forEach(x => {
-      const c = xpCost(x.len, x.effort);
+      if (xpIsSleep(x)) { s.sleep += x.len; return; }   // sleep: not booked, no energy
       if (x.kind === 'busy') s.busyMin += x.len; else s.used += x.len;
-      s.planE += c;
+      s.planE += xpCost(x.len, x.effort);
       if (xpReal(x) && k <= today) { const end = k < today ? x.start + x.len : Math.min(x.start + x.len, nowMin); if (end > x.start) s.spentE += xpCost(end - x.start, x.effort); }
     });
     s.free += 1440;
   });
-  s.free -= s.busyMin;
+  s.sleep = Math.min(s.sleep, s.free); s.free -= s.busyMin + s.sleep;   // free = awake and not booked (before tasks)
   return s;
 }
 function xpExpOn(days) {   // EXP earned on these days: finished tasks + EXP entries
@@ -253,7 +284,7 @@ function xpAverage() {   // your average day, once there are XP_LEARN_DAYS days 
   const l = [];
   for (let i = 1; i <= 60; i++) {
     const k = xpShift(today, -i), items = xpItemsFor(k);
-    if (items.some(x => x.kind !== 'busy' && xpReal(x))) l.push(items.filter(xpReal).reduce((a, x) => a + xpCost(x.len, x.effort), 0));
+    if (items.some(x => x.kind !== 'busy' && xpReal(x))) l.push(items.filter(xpReal).reduce((a, x) => a + xpCostOf(x), 0));
   }
   const v = l.length >= XP_LEARN_DAYS ? {day: l.reduce((a, b) => a + b, 0) / l.length, n: l.length} : {n: l.length, day: null};
   xpAvgCache = {k: ck, v}; return v;
@@ -277,7 +308,7 @@ function renderExpro() {
       <div class="xpdate"><button class="ib" data-act="xpday" data-v="-1" aria-label="Back">&larr;</button><b>${esc(lbl)}</b><button class="ib" data-act="xpday" data-v="1" aria-label="Forward">&rarr;</button>${xpRangeDays().includes(today) ? '' : '<button class="link" data-act="xpday" data-v="0">Today</button>'}</div>
       <div class="xptabs">${tab('days', 'Days')}${tab('month', 'Month')}${tab('domains', 'Domains')}</div>
       ${xpTimed() ? `<div class="xpctl"><span>DAYS</span><button class="ib" data-act="xpn" data-v="-1" aria-label="Fewer days">-</button><b>${xpN}</b><button class="ib" data-act="xpn" data-v="1" aria-label="More days">+</button></div>
-        <div class="xpctl"><span>ZOOM</span><button class="ib" data-act="xpzoom" data-v="out" aria-label="Zoom out">-</button><button class="ib" data-act="xpzoom" data-v="in" aria-label="Zoom in">+</button><button class="link" data-act="xpzoom" data-v="fit">Whole day</button></div>` : ''}
+        <div class="xpctl"><span>ZOOM</span><button class="ib" data-act="xpzoom" data-v="out" aria-label="Zoom out">-</button><button class="ib" data-act="xpzoom" data-v="in" aria-label="Zoom in">+</button><button class="link" data-act="xpzoom" data-v="fit">Whole day</button><button class="link" data-act="xpunfold">${xpUnfold ? 'Fold sleep' : 'Show sleep'}</button></div>` : ''}
       ${xpTimed() ? `<label class="xpdepth">3D <input type="range" id="xpDepth" min="0" max="16" value="${xpDepth()}"></label>` : ''}
     </div>
     ${cal ? `<div class="xptop"><div class="xpmeters" id="xpMeters"></div><div class="xptray" id="xpTray"></div></div>
@@ -293,15 +324,17 @@ function renderExpro() {
 function xpDrawMeters() {
   const m = $('xpMeters'); if (!m) return;
   // everything here is one day: the one you picked (click a day's name on the calendar)
-  const s = xpTotals([xpDate]), max = XP_MAX_DAY, avg = xpAverage(), booked = s.busyMin + s.used, tLeft = 1440 - booked, today = xpToday();
-  const pct = v => Math.min(100, v / max * 100), over = s.planE > max, avgR = avg.day;
+  const s = xpTotals([xpDate]), mo = xpMaxOn(xpDate), max = mo.max, avg = xpAverage(), awake = 1440 - s.sleep, booked = s.busyMin + s.used, tLeft = awake - booked, today = xpToday();
+  const pct = v => Math.min(100, v / max * 100), over = s.planE > max, avgR = avg.day, n = mo.n, off = n && Math.abs(n.min - XP_SLEEP) >= 10;
   const dn = xpDate === today ? 'TODAY' : new Date(xpDate + 'T12:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}).toUpperCase();
-  m.innerHTML = `<div class="xpm"><span>TIME, ${dn}</span><div class="xpbar${tLeft < 0 ? ' over' : ''}"><i style="width:${Math.min(100, booked / 1440 * 100)}%"></i></div>
-      <div><b>${sdur(booked)}</b> booked, <b class="${tLeft < 0 ? 'neg' : ''}">${tLeft < 0 ? sdur(-tLeft) + ' double-booked' : sdur(tLeft) + ' free'}</b></div></div>
+  m.innerHTML = `<div class="xpm"><span>SLEEP, NIGHT BEFORE</span><div class="xpbar s${off ? ' over' : ''}"><i style="width:${n ? Math.min(100, n.min / 600 * 100) : 0}%"></i><u style="left:${XP_SLEEP / 600 * 100}%"></u></div>
+      <div>${n ? `<b>${sdur(n.min)}</b> ${n.real ? 'slept' : 'planned'}, <b class="${off ? 'neg' : ''}">${!off ? 'on goal' : n.min < XP_SLEEP ? sdur(XP_SLEEP - n.min) + ' short' : sdur(n.min - XP_SLEEP) + ' over'}</b>` : 'Nothing called sleep yet'}, goal ${sdur(XP_SLEEP)}</div></div>
+    <div class="xpm"><span>TIME, ${dn}</span><div class="xpbar${tLeft < 0 ? ' over' : ''}"><i style="width:${awake > 0 ? Math.min(100, booked / awake * 100) : 100}%"></i></div>
+      <div><b>${sdur(booked)}</b> booked, <b class="${tLeft < 0 ? 'neg' : ''}">${tLeft < 0 ? sdur(-tLeft) + ' double-booked' : sdur(tLeft) + ' free'}</b> of ${sdur(awake)} awake</div></div>
     <div class="xpm"><span>ENERGY, ${dn}</span><div class="xpbar e${over ? ' over' : ''}"><i class="pl" style="width:${pct(s.planE)}%"></i><i class="sp" style="width:${pct(s.spentE)}%"></i>${avgR ? `<u style="left:${pct(avgR)}%"></u>` : ''}</div>
-      <div><b>${num1(s.spentE)}</b> spent so far, <b class="${over ? 'neg' : ''}">${num1(s.planE)}</b> planned, max ${max}</div>
+      <div><b>${num1(s.spentE)}</b> spent so far, <b class="${over ? 'neg' : ''}">${num1(s.planE)}</b> planned, max ${max}${max < XP_MAX_DAY ? ` <span class="neg">(${XP_MAX_DAY - max} lost to ${n.min < XP_SLEEP ? 'too little' : 'too much'} sleep)</span>` : ''}</div>
       <div class="mute">${avg.day ? `Your average: ${num1(avg.day)} a day (${Math.round(avg.day / XP_MAX_DAY * 100)}% of max)` : `Learning your average: ${avg.n} of ${XP_LEARN_DAYS} days`}</div></div>
-    <div class="xpm"><span>EXP</span><div>${xpDate === today ? '' : `${dn.charAt(0) + dn.slice(1).toLowerCase()} <b>${xpExpOn([xpDate]).toLocaleString()}</b>, `}Today <b>${xpExpOn([today]).toLocaleString()}</b>, this month <b>${xpExpOn(xpMonth(today)).toLocaleString()}</b></div></div>`;
+    <div class="xpm"><span>EXP</span><div>${xpDate === today ? '' : `${new Date(xpDate + 'T12:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'})} <b>${xpExpOn([xpDate]).toLocaleString()}</b>, `}Today <b>${xpExpOn([today]).toLocaleString()}</b>, this month <b>${xpExpOn(xpMonth(today)).toLocaleString()}</b></div></div>`;
 }
 
 // a block's three visible faces: the front (raised by its effort), its left side and its bottom
@@ -327,7 +360,7 @@ function xpDrawTray() {
       <button class="xpchest${xpChest ? ' open' : ''}${xpDrag && xpDrag.overChest ? ' drop' : ''}" id="xpChest" data-act="xpchest">${xpChest ? 'BACK TO<br>TASKS' : `CHEST<br><small>${nArch}</small>`}</button></div>
     ${xpChest ? '' : `<div class="xpnew"><input id="xpNT" placeholder="New task" maxlength="80" autocomplete="off">
       ${xpNewDom ? '<input id="xpNDn" class="xpnd" placeholder="New domain" maxlength="30" autocomplete="off">' : xpDomSelect(c.lastDomain || xpDomains()[0], 'id="xpND"')}
-      <input id="xpNE" class="xpne" value="${esc(c.lastTime || '30m')}" autocomplete="off">
+      ${xpHM(xpLastMin(), 'data-hm="new"')}
       <select id="xpNF">${eff}</select><button class="go2" data-act="xpadd">ADD</button></div>`}`;
   el.classList.toggle('drop', !!(xpDrag && xpDrag.toTray));
 }
@@ -336,12 +369,13 @@ function xpDrawCal() {
   const el = $('xpCal'); if (!el) return;
   if (xpView === 'month') return xpDrawMonth(el);
   const days = xpRangeDays(), k = xpDepth() * .6 * Math.SQRT1_2, PX = xpPx = Math.max(xpPxMin(), Math.min(XP_PX_MAX, xpPx || XP_PX)), pad = Math.round(5 * k) + 8, gut = 50, head = 34;
-  const W = el.clientWidth || 700, colW = (W - gut - 4) / days.length, y = t => head + pad + t * PX, today = xpToday();
+  const W = el.clientWidth || 700, colW = (W - gut - 4) / days.length, folds = xpFolds(days), map = xpMap(folds, PX), y = t => head + pad + map.Y(t), today = xpToday();
   const keyNow = 'cal', old = xpScroll.key === keyNow ? xpScroll.top : null;
   let h = `<div class="xpwh" style="height:${head}px;padding-left:${gut}px">${days.map(d => `<button class="${d === xpDate ? 'on' : ''}${d === today ? ' today' : ''}" data-act="xpsetday" data-v="${d}" style="width:${colW}px" title="${xpDayTip(d)}">${new Date(d + 'T12:00').toLocaleDateString(undefined, {weekday: colW < 60 ? 'narrow' : 'short', day: 'numeric'})}${xpDayBar(d)}</button>`).join('')}</div>`;
   // hour lines: as you zoom in they go to every 30, 15, then 10 minutes (labels need about 36px between them)
   const step = [10, 15, 30, 60, 120, 180, 240].find(v => v * PX >= 36) || 240, minor = step >= 20 && step / 2 * PX >= 14 ? step / 2 : 0;
-  for (let m = 0; m <= 1440; m += minor || step) h += `<div class="xph${m % step ? ' half' : ''}" style="top:${y(m)}px">${m % step || m === 1440 ? '' : `<span>${clock(m)}</span>`}</div>`;
+  for (let m = 0; m <= 1440; m += minor || step) if (!folds.some(([a, b]) => m > a && m < b)) h += `<div class="xph${m % step ? ' half' : ''}" style="top:${y(m)}px">${m % step || m === 1440 || folds.some(([a, b]) => m === a || m === b) ? '' : `<span>${clock(m)}</span>`}</div>`;
+  folds.forEach(([a, b]) => { h += `<div class="xpfoldb" style="top:${y(a)}px;height:${y(b) - y(a)}px;left:${gut}px" title="Asleep ${clock(a)}-${clock(b)}, folded"><span>${clock(a)}-${clock(b)}</span></div>`; });
   days.forEach((d, i) => { h += `<div class="xpcol${d === xpDate ? ' on' : ''}" style="left:${gut + i * colW}px;width:${colW}px;top:${head}px"></div>`; });
   const ti = days.indexOf(today);
   if (ti >= 0) { const n = new Date(); h += `<div class="xpnow" style="top:${y(n.getHours() * 60 + n.getMinutes())}px;left:${gut + ti * colW}px;width:${colW}px"></div>`; }
@@ -349,10 +383,10 @@ function xpDrawCal() {
   days.forEach((d, i) => xpLanes(xpItemsFor(d)).sort((a, b) => a.start - b.start || b.lane - a.lane).forEach(x => {
     // a task running several days: its pieces reach the column edges so they read as one block
     const lw = colW / x.lanes, e = x.effort * k, ls = gut + i * colW + x.lane * lw, cl = x.span > 1 && x.idx > 0, cr = x.span > 1 && x.idx < x.span - 1;
-    const fl = ls + (cl ? 0 : 2 + e), fr = ls + lw - (cr ? 0 : 2), w = Math.max(20, fr - fl), bx = fl - e, by = y(x.start), bh = Math.max(6, x.len * PX - 2);
+    const fl = ls + (cl ? 0 : 2 + e), fr = ls + lw - (cr ? 0 : 2), w = Math.max(20, fr - fl), bx = fl - e, by = y(x.start), bh = Math.max(6, y(x.start + x.len) - by - 2);
     const first = !x.span || x.idx === 0, last = !x.span || x.idx === x.span - 1;
     const f = xpFaces(xpCol(x.domain), x.kind), small = bh < 30, still = x.cut || x.kind === 'exp' || x.id === '__mini';
-    const plan = x.kind === 'task' && x.done && !x.cut && x.t ? `<div class="xpplan" style="height:${x.t.est * PX - 2}px;transform:translate(${e}px,${-e}px)"></div>` : '';
+    const plan = x.kind === 'task' && x.done && !x.cut && x.t ? `<div class="xpplan" style="height:${y(x.start + x.t.est) - by - 2}px;transform:translate(${e}px,${-e}px)"></div>` : '';
     const info = [x.kind === 'busy' ? '' : esc(x.domain || ''), `${clock(x.start)}-${clock(x.start + x.len)}`, `effort ${x.effort}`, x.span > 1 ? `day ${x.idx + 1} of ${x.span}` : '', x.t ? xpSubCount(x.t) : '', x.t && x.t.makeup ? 'make up' : ''].filter(Boolean).join(', ');
     h += `<div class="xpb ${x.kind}${cl ? ' cl' : ''}${cr ? ' cr' : ''}${x.done ? ' done' : ''}${x.ghost ? ' ghost' : ''}${x.lifted ? ' lifted' : ''}${xpSel === x.id ? ' sel' : ''}" data-xid="${x.id}" data-day="${d}" style="left:${bx}px;top:${by}px;width:${w}px;height:${bh}px;z-index:${z++}">
       <svg class="xps" width="1" height="1">${cl ? '' : `<polygon fill="${f.left}" points="0,0 ${e},${-e} ${e},${bh - e} 0,${bh}"/>`}<polygon fill="${f.bot}" points="0,${bh} ${w},${bh} ${w + e},${bh - e} ${e},${bh - e}"/></svg>
@@ -360,8 +394,8 @@ function xpDrawCal() {
         <b>${x.done && x.kind === 'task' ? 'Done: ' : ''}${esc(x.title)}</b>${small ? '' : `<span>${info}</span>`}
         ${still || x.done ? '' : `${x.cut ? '' : '<i class="xpgt" data-xg="top"></i>'}${x.cutEnd ? '' : '<i class="xpgl" data-xg="len"></i>'}${x.kind === 'task' && first ? '<i class="xpgL" data-xg="left"></i>' : ''}${x.kind === 'task' && last ? '<i class="xpgR" data-xg="right"></i>' : ''}${last ? `<i class="xpgz" data-xg="z">${x.effort}</i>` : ''}`}</div></div>`;
   }));
-  el.innerHTML = `<div class="xpplane" id="xpPlane" style="height:${head + pad + 1440 * PX + 16}px">${h}</div>`;
-  el._geo = {pad, gut, colW, PX, days, head};
+  el.innerHTML = `<div class="xpplane" id="xpPlane" style="height:${head + pad + map.H + 16}px">${h}</div>`;
+  el._geo = {pad, gut, colW, PX, days, head, map};
   xpScroll.key = keyNow;
   if (old != null) el.scrollTop = old;   // keep your place when redrawing; the first time, start near now (or the first task, or 7am)
   else {
@@ -370,11 +404,32 @@ function xpDrawCal() {
   }
   xpScroll.top = el.scrollTop;
 }
+function xpFolds(days) {   // stretches of the day (an hour or more) when every day in view is asleep and nothing else is on
+  if (xpUnfold) return [];
+  const sl = new Array(288).fill(true), skip = x => x.ghost || x.lifted || x.id === '__mini' || (xpDrag && x.id === xpDrag.id);
+  days.forEach(d => {
+    const on = new Array(288).fill(false), other = new Array(288).fill(false);
+    xpItemsFor(d).filter(x => !skip(x)).forEach(x => { for (let i = Math.floor(x.start / 5); i < Math.ceil((x.start + x.len) / 5); i++) (xpIsSleep(x) ? on : other)[i] = true; });
+    for (let i = 0; i < 288; i++) sl[i] = sl[i] && on[i] && !other[i];
+  });
+  const f = [];
+  for (let i = 0; i < 288;) { if (!sl[i]) { i++; continue; } let j = i; while (j < 288 && sl[j]) j++; if (j - i >= 12) f.push([i * 5, j * 5]); i = j; }
+  return f;
+}
+function xpMap(folds, PX) {   // minutes <-> pixels down the calendar, with folded stretches squeezed to XP_FOLD pixels
+  const seg = []; let m = 0;
+  folds.forEach(([a, b]) => { if (a > m) seg.push([m, a, PX]); seg.push([a, b, XP_FOLD / (b - a)]); m = b; });
+  if (m < 1440) seg.push([m, 1440, PX]);
+  let acc = 0; seg.forEach(s => { s[3] = acc; acc += (s[1] - s[0]) * s[2]; });
+  const Y = t => { const s = seg.find(s => t <= s[1]) || seg[seg.length - 1]; return t < 0 ? t * PX : s[3] + (t - s[0]) * s[2]; };
+  const M = py => { const s = seg.find(s => py <= s[3] + (s[1] - s[0]) * s[2]) || seg[seg.length - 1]; return py < 0 ? py / PX : s[0] + (py - s[3]) / s[2]; };
+  return {Y, M, H: acc};
+}
 const xpPxMin = () => { const c = $('xpCal'); return Math.max(.2, ((c && c.clientHeight) || 600) - 34 - 40) / 1440; };   // the whole day fits
 function xpDayBar(d) {   // under each day's name: that day's planned energy against the daily max
-  const s = xpTotals([d]); return s.planE ? `<i class="${s.planE > XP_MAX_DAY ? 'over' : ''}" style="width:${Math.min(100, s.planE / XP_MAX_DAY * 100)}%"></i>` : '';
+  const s = xpTotals([d]), mx = xpMaxOn(d).max; return s.planE ? `<i class="${s.planE > mx ? 'over' : ''}" style="width:${Math.min(100, s.planE / mx * 100)}%"></i>` : '';
 }
-function xpDayTip(d) { const s = xpTotals([d]), b = s.busyMin + s.used; return `${sdur(b)} booked, ${1440 - b < 0 ? sdur(b - 1440) + ' double-booked' : sdur(1440 - b) + ' free'}. Energy ${num1(s.planE)} of ${XP_MAX_DAY}`; }
+function xpDayTip(d) { const s = xpTotals([d]), mo = xpMaxOn(d), b = s.busyMin + s.used, f = 1440 - s.sleep - b; return `Sleep: ${xpSleepTxt(mo.n)}. ${sdur(b)} booked, ${f < 0 ? sdur(-f) + ' double-booked' : sdur(f) + ' free'}. Energy ${num1(s.planE)} of ${mo.max}`; }
 /* --- zoom and moving through days --- */
 let xpZoomF = 1, xpZoomY = null, xpZoomRaf = 0, xpSwipe = 0, xpSwipeT = 0, xpViewT = 0;
 function xpZoom(f, cy) {   // zoom the hours, keeping the time under the pointer (or the middle) where it is
@@ -384,10 +439,10 @@ function xpZoom(f, cy) {   // zoom the hours, keeping the time under the pointer
     xpZoomRaf = 0;
     const cal = $('xpCal'), g = cal && cal._geo; if (!g) return;
     const box = cal.getBoundingClientRect(), off = (xpZoomY == null ? box.top + cal.clientHeight / 2 : xpZoomY) - box.top;
-    const m = (cal.scrollTop + off - g.head - g.pad) / g.PX;
+    const m = g.map.M(cal.scrollTop + off - g.head - g.pad);
     xpPx = Math.max(xpPxMin(), Math.min(XP_PX_MAX, g.PX * xpZoomF)); xpZoomF = 1;
     xpDrawCal();
-    cal.scrollTop = m * xpPx + g.head + g.pad - off; xpScroll.top = cal.scrollTop;
+    cal.scrollTop = cal._geo.map.Y(m) + g.head + g.pad - off; xpScroll.top = cal.scrollTop;
     xpSaveView();
   });
 }
@@ -444,7 +499,8 @@ function xpDrawMini() {
   el.style.left = Math.max(8, Math.min(m.x + 12, innerWidth - 330)) + 'px'; el.style.top = Math.max(8, Math.min(m.y - 20, innerHeight - 250)) + 'px';
   el.innerHTML = `<div class="mute">${new Date(m.day + 'T12:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'})}, ${clock(m.start)}</div>
     <input id="xmT" placeholder="Task" list="xmTitles" maxlength="80" autocomplete="off"><datalist id="xmTitles">${titles.map(t => `<option value="${esc(t)}">`).join('')}</datalist>
-    <div class="xmrow">${xpDomSelect(m.domain, 'id="xmD"')}<input id="xmE" value="${sdur(m.est)}" autocomplete="off"><select id="xmF">${[1, 2, 3, 4, 5].map(n => `<option value="${n}"${n === m.effort ? ' selected' : ''}>effort ${n}</option>`).join('')}</select></div>
+    <div class="xmrow">${xpHM(m.est, 'data-hm="mini"')}</div>
+    <div class="xmrow">${xpDomSelect(m.domain, 'id="xmD"')}<select id="xmF">${[1, 2, 3, 4, 5].map(n => `<option value="${n}"${n === m.effort ? ' selected' : ''}>effort ${n}</option>`).join('')}</select></div>
     <div class="xmrow"><button class="go2" data-act="xpminiadd">ADD</button><button class="link" data-act="xpminiclose">Cancel</button></div>`;
   document.body.appendChild(el);
   $('xmT').focus();
@@ -452,12 +508,12 @@ function xpDrawMini() {
 function xpMiniFill() {   // a title you've used before: fill in its domain, time and effort
   const v = $('xmT').value, src = xpTplByTitle(v) || [...xpTasks()].reverse().find(t => key(t.title) === key(v));
   xpMini.title = v;
-  if (src && $('xmD')) { xpMini.domain = src.domain; xpMini.est = src.est; xpMini.effort = src.effort; $('xmD').outerHTML = xpDomSelect(src.domain, 'id="xmD"'); $('xmE').value = sdur(src.est); $('xmF').value = src.effort; }
+  if (src && $('xmD')) { xpMini.domain = src.domain; xpMini.est = src.est; xpMini.effort = src.effort; $('xmD').outerHTML = xpDomSelect(src.domain, 'id="xmD"'); xpSetHM(document.querySelector('[data-hm="mini"]'), src.est); $('xmF').value = src.effort; }
   xpDrawCal();
 }
 function xpMiniAdd() {
   const title = $('xmT').value.trim(); if (!title) { $('xmT').focus(); return; }
-  const est = xpParse($('xmE').value); if (!est) { flash('Time: try 45m, 1h30, 1:30 or 2h'); $('xmE').focus(); return; }
+  const est = xpReadHM(document.querySelector('[data-hm="mini"]')); if (!est) { flash('Enter the hours and minutes'); document.querySelector('[data-hm="mini"]').focus(); return; }
   const dn = $('xmDn'), domain = dn ? dn.value.trim() : $('xmD').value; if (!domain) { dn.focus(); return; }
   const effort = +$('xmF').value, m = xpMini, tpl = xpTplByTitle(title), id = xpId('t');
   const saves = [{...xpFromTpl(tpl), id, kind: 'task', is_public: false, title, domain, est, effort, day: m.day, start: m.start, tpl: tpl ? tpl.id : undefined, makeup: tpl ? xpOwed(tpl)[0]?.id : undefined, created: new Date().toISOString()}];
@@ -470,9 +526,9 @@ document.addEventListener('dblclick', ev => {
   const plane = ev.target.closest('#xpPlane'); if (!plane || ev.target.closest('.xpb,.xpwh')) return;
   const geo = $('xpCal')._geo, r = plane.getBoundingClientRect();
   const day = geo.days[Math.max(0, Math.min(geo.days.length - 1, Math.floor((ev.clientX - r.left - geo.gut) / geo.colW)))], st = Math.max(5, xpStep());
-  const start = Math.max(0, Math.min(1440 - st, Math.floor((ev.clientY - r.top - geo.head - geo.pad) / geo.PX / st) * st));
+  const start = Math.max(0, Math.min(1440 - st, Math.floor(geo.map.M(ev.clientY - r.top - geo.head - geo.pad) / st) * st));
   const c = xpCfg();
-  xpMini = {day, start, x: ev.clientX, y: ev.clientY, domain: c.lastDomain || xpDomains()[0], est: xpParse(c.lastTime || '') || 30, effort: c.lastEffort || 3};
+  xpMini = {day, start, x: ev.clientX, y: ev.clientY, domain: c.lastDomain || xpDomains()[0], est: xpLastMin(), effort: c.lastEffort || 3};
   xpSel = null; xpDrawMini(); xpDrawCal(); xpDrawSide();
 });
 
@@ -486,7 +542,7 @@ function xpDrawSide() {
   if (xpDoneForm && t) {
     const f = xpDoneForm;
     h = `<h3>DONE: ${esc(t.title).toUpperCase()}</h3>
-      <label>How long did it really take?</label><div class="xpmin"><button class="tag" data-act="xpmin" data-v="-15">-15</button><input id="xpDM" value="${sdur(f.min)}" autocomplete="off"><button class="tag" data-act="xpmin" data-v="15">+15</button></div>
+      <label>How long did it really take?</label><div class="xpmin">${xpHM(f.min, 'data-hm="done"')}</div>
       <p class="mute">Planned ${sdur(xpEstT(t))}</p>
       <label>How draining was it really?</label>${xpRate('effort', f.effort)}<p class="mute">Planned effort ${t.effort}</p>
       <label>How satisfied are you?</label>${xpRate('sat', f.sat)}
@@ -505,7 +561,7 @@ function xpDrawSide() {
     const sh = xpShared(t), r = t.rep && (c.repeats || []).find(x => x.id === t.rep);
     h = `<h3>TASK</h3><input data-xf="title" value="${esc(t.title)}" maxlength="80">
       <div class="two"><div><label>Domain</label>${xpDomSelect(t.domain, 'data-xf="domain"')}</div>
-        <div><label>Time</label><input data-xf="est" value="${sdur(t.est)}" autocomplete="off"></div></div>
+        </div><label>Time</label>${xpHM(t.est, 'data-xf="est"')}
       <label>Effort</label>${xpRate('teffort', t.effort)}
       <div class="two"><div><label>Day</label><input data-xf="day" type="date" value="${t.day || ''}"></div>
         <div><label>Starts</label><input data-xf="start" type="time" value="${t.start != null ? hmStr(t.start) : ''}"></div></div>
@@ -525,7 +581,7 @@ function xpDrawSide() {
   else if (p) {
     h = `<h3>${p.archived ? 'IN THE CHEST' : 'TASK BLOCK'}</h3><input data-xp="title" value="${esc(p.title)}" maxlength="80">
       <div class="two"><div><label>Domain</label>${xpDomSelect(p.domain, 'data-xp="domain"')}</div>
-        <div><label>Time</label><input data-xp="est" value="${sdur(p.est)}" autocomplete="off"></div></div>
+        </div><label>Time</label>${xpHM(p.est, 'data-xp="est"')}
       <label>Effort</label>${xpRate('peffort', p.effort)}
       ${xpNotesHtml(p)}
       <p class="mute">Done ${xpTasks().filter(x => x.done && (x.tpl === p.id || key(x.title) === key(p.title))).length} times</p>
@@ -552,7 +608,7 @@ function xpDrawSide() {
     const s = xpTotals([xpDate]), busy = xpBusyOn(xpDate).sort((a, b) => a.start - b.start), ideas = xpRepeatIdeas();
     const offCal = xpTasks().filter(x => x.done && x.done.day === xpDate && x.start == null);
     h = `<h3>${esc(new Date(xpDate + 'T12:00').toLocaleDateString(undefined, {weekday: 'long', month: 'short', day: 'numeric'})).toUpperCase()}</h3>
-      <div class="xpdaysum"><div><b>${sdur(s.busyMin + s.used)}</b> booked, <b>${1440 - s.busyMin - s.used < 0 ? sdur(s.busyMin + s.used - 1440) + '</b> double-booked' : sdur(1440 - s.busyMin - s.used) + '</b> free'}</div><div><b>${num1(s.spentE)}</b> energy spent, ${num1(s.planE)} planned, max ${XP_MAX_DAY}</div><div><b>${xpExpOn([xpDate])}</b> EXP</div></div>
+      <div class="xpdaysum"><div>Sleep: ${xpSleepTxt(xpNight(xpDate))}</div><div><b>${sdur(s.busyMin + s.used)}</b> booked, <b>${s.free - s.used < 0 ? sdur(s.used - s.free) + '</b> double-booked' : sdur(s.free - s.used) + '</b> free'}</div><div><b>${num1(s.spentE)}</b> energy spent, ${num1(s.planE)} planned, max ${xpMaxOn(xpDate).max}</div><div><b>${xpExpOn([xpDate])}</b> EXP</div></div>
       <h3>BUSY</h3>
       ${busy.map(x => `<button class="tag xprow" data-act="xpsel" data-v="${x.id}">${esc(x.label || 'Busy')} <span>${clock(x.start)}-${clock(x.start + x.len)}${x.rule ? ', ' + xpRepOf(x).toLowerCase() : ''}</span></button>`).join('')}
       <div class="xpbadd"><input id="xpBL" placeholder="Sleep, work..." maxlength="60"><input id="xpBF" type="time" value="23:00"><input id="xpBT" type="time" value="07:00">
@@ -626,6 +682,7 @@ document.addEventListener('click', ev => {
     xpSel = xpDoneForm = xpMini = null; renderExpro();
   }
   else if (a === 'xpn') xpSetN(xpN + +v);
+  else if (a === 'xpunfold') { xpUnfold = !xpUnfold; renderExpro(); }
   else if (a === 'xpzoom') {
     if (v === 'fit') { xpPx = xpPxMin(); xpDrawCal(); $('xpCal').scrollTop = 0; xpSaveView(); }
     else xpZoom(v === 'in' ? 1.6 : 1 / 1.6);
@@ -713,17 +770,17 @@ function xpSubEdit(o, delId) {   // add the typed subtask, or remove one
 function xpAdd() {   // the form under the grid: a new permanent task block, top-left
   const title = $('xpNT').value.trim(); if (!title) { $('xpNT').focus(); return; }
   if (xpTplByTitle(title)) { flash(`"${title}" is already one of your tasks`); return; }
-  const est = xpParse($('xpNE').value); if (!est) { flash('Time: try 45m, 1h30, 1:30 or 2h'); $('xpNE').focus(); return; }
+  const hmEl = document.querySelector('[data-hm="new"]'), est = xpReadHM(hmEl); if (!est) { flash('Enter the hours and minutes'); hmEl.focus(); return; }
   const domain = xpNewDom ? $('xpNDn').value.trim() : $('xpND').value; if (!domain) { $('xpNDn').focus(); return; }
   const effort = +$('xpNF').value;
   xpNewDom = false;
-  xpSave([xpNewTpl({title, domain, est, effort}), {...xpCfg(), ...xpAddDomain(domain), lastDomain: domain, lastTime: sdur(est), lastEffort: effort}]);
+  xpSave([xpNewTpl({title, domain, est, effort}), {...xpCfg(), ...xpAddDomain(domain), lastDomain: domain, lastMin: est, lastEffort: effort}]);
   setTimeout(() => $('xpNT') && $('xpNT').focus({preventScroll: true}));
 }
 /* --- typing --- */
 document.addEventListener('keydown', ev => {
   if (page !== 'expro') return;
-  if (ev.key === 'Enter' && ['xpNT', 'xpNE', 'xpNDn'].includes(ev.target.id)) { ev.preventDefault(); xpAdd(); }
+  if (ev.key === 'Enter' && (['xpNT', 'xpNDn'].includes(ev.target.id) || ev.target.dataset.hm === 'new')) { ev.preventDefault(); xpAdd(); }
   if (ev.key === 'Enter' && ev.target.closest('#xpMini')) { ev.preventDefault(); xpMiniAdd(); }
   if (ev.key === 'Enter' && ev.target.id === 'xpSubN') { ev.preventDefault(); document.querySelector('[data-act="xpsubadd"]').click(); }
   if (ev.key === 'Enter' && ev.target.dataset.xsubt) { ev.preventDefault(); ev.target.blur(); }
@@ -740,17 +797,18 @@ document.addEventListener('input', ev => {
   if (page !== 'expro') return;
   if (ev.target.id === 'xpDepth') { xpDepthLive = +ev.target.value; xpDrawCal(); xpDrawTray(); }
   if (ev.target.id === 'xmT') xpMiniFill();
-  if (ev.target.id === 'xmE' && xpMini) { const m = xpParse(ev.target.value); if (m) { xpMini.est = m; xpDrawCal(); } }
+  if (ev.target.dataset.hm === 'done' && xpDoneForm) { xpDoneForm.min = xpReadHM(ev.target); const b = document.querySelector('[data-act="xpdone"]'); if (b) b.textContent = `SAVE, +${xpDoneForm.min} EXP`; }
+  if (ev.target.dataset.hm === 'mini' && xpMini) { const m = xpReadHM(ev.target); if (m) { xpMini.est = m; xpDrawCal(); } }
 });
 document.addEventListener('change', ev => {
   if (page !== 'expro') return;
   const e = ev.target, v = e.value, t = xpTasks().find(x => x.id === xpSel), p = all.find(x => x.id === xpSel && x.kind === 'tasktype');
   if (e.id === 'xpDepth') { xpDepthLive = null; xpSaveCfg({depth: +v}); }
-  else if (e.id === 'xpND' && v === '__new') { const keep = $('xpNT').value, tm = $('xpNE').value; xpNewDom = true; xpDrawTray(); $('xpNT').value = keep; $('xpNE').value = tm; $('xpNDn').focus(); }
+  else if (e.id === 'xpND' && v === '__new') { const keep = $('xpNT').value, tm = xpReadHM(document.querySelector('[data-hm="new"]')); xpNewDom = true; xpDrawTray(); $('xpNT').value = keep; xpSetHM(document.querySelector('[data-hm="new"]'), tm); $('xpNDn').focus(); }
   else if (e.id === 'xmD' && v === '__new') { e.outerHTML = '<input id="xmDn" placeholder="New domain" maxlength="30">'; $('xmDn').focus(); }
   else if (e.id === 'xmD' && xpMini) { xpMini.domain = v; xpDrawCal(); }
   else if (e.id === 'xmF' && xpMini) { xpMini.effort = +v; xpDrawCal(); }
-  else if (e.id === 'xpDM' && xpDoneForm) { const m = xpParse(v); if (m) xpDoneForm.min = m; xpDrawSide(); }
+  else if (e.dataset.hm === 'done' && xpDoneForm) { xpDoneForm.min = xpReadHM(e); }
   else if ((e.dataset.xnote || e.dataset.xsub || e.dataset.xsubt) && (t || p)) {   // description and subtasks
     const o = t || p;
     if (e.dataset.xnote) xpSave({...o, notes: v.trim() || undefined});
@@ -763,7 +821,7 @@ document.addEventListener('change', ev => {
     else if (k === 'domain' && v === '__new') { e.outerHTML = `<input ${t ? 'data-xf' : 'data-xp'}="domainNew" placeholder="New domain" maxlength="30">`; document.querySelector('[data-xf="domainNew"],[data-xp="domainNew"]').focus(); }
     else if (k === 'domain') put1({domain: v});
     else if (k === 'domainNew' && v.trim()) xpSave([{...o, domain: v.trim()}, {...xpCfg(), ...xpAddDomain(v)}]);
-    else if (k === 'est') { const m = xpParse(v); if (m) put1({est: m}); else flash('Time: try 45m, 1h30, 1:30 or 2h'); }
+    else if (k === 'est') { const m = xpReadHM(e); if (m) put1({est: m}); else flash('Enter the hours and minutes'); }
     else if (k === 'span' && +v >= 1) put1({span: Math.min(31, Math.round(+v))});
     else if (k === 'day') v ? put1({day: v}) : xpOffCal([t], false, `"${t.title}" is off the calendar`);
     else if (k === 'start') v ? put1({start: hm(v), day: t.day || xpDate}) : xpOffCal([t], false, `"${t.title}" is off the calendar`);
@@ -822,22 +880,22 @@ document.addEventListener('pointermove', ev => {
   const colAt = () => geo.days[Math.max(0, Math.min(geo.days.length - 1, Math.floor((ev.clientX - r.left - geo.gut) / geo.colW)))];
   if (['tray', 'tpl'].includes(g.mode)) {
     g.over = ev.clientX > box.left && ev.clientX < box.right && ev.clientY > box.top + geo.head && ev.clientY < box.bottom;
-    g.cur = {day: colAt(), start: Math.max(0, Math.min(1440 - xpStep(), xpSnap((ev.clientY - r.top - geo.head - geo.pad) / geo.PX - 10))), len: g.item.len, effort: g.item.effort};
+    g.cur = {day: colAt(), start: Math.max(0, Math.min(1440 - xpStep(), xpSnap(geo.map.M(ev.clientY - r.top - geo.head - geo.pad) - 10))), len: g.item.len, effort: g.item.effort};
     xpGhost(ev, g, g.over);
   }
   else if (g.mode === 'move') {
     g.toTray = g.item.kind === 'task' && !g.item.done && !!(under && under.closest('#xpTray'));
-    g.cur.start = Math.max(0, Math.min(1440 - xpStep(), xpSnap(g.item.start + dy / geo.PX)));
+    g.cur.start = Math.max(0, Math.min(1440 - xpStep(), xpSnap(geo.map.M(geo.map.Y(g.item.start) + dy))));
     if (g.item.kind === 'task') g.cur.day = xpShift(g.item.t.day, xpGap(g.day0, colAt()));
     $('xpTray').classList.toggle('drop', g.toTray);
   }
   else if (g.mode === 'top') {   // top edge: the start moves, the end stays put
-    const end = g.item.start + g.item.len, s = Math.max(0, Math.min(end - xpStep(), xpSnap(g.item.start + dy / geo.PX)));
+    const end = g.item.start + g.item.len, s = Math.max(0, Math.min(end - xpStep(), xpSnap(geo.map.M(geo.map.Y(g.item.start) + dy))));
     g.cur.start = s; g.cur.len = end - s;
   }
   else if (g.mode === 'left') { const lastD = xpLast(g.item.t), d = colAt() > lastD ? lastD : colAt(); g.cur.day = d; g.cur.span = xpGap(d, lastD) + 1; }
   else if (g.mode === 'right') { const d = colAt() < g.item.t.day ? g.item.t.day : colAt(); g.cur.span = xpGap(g.item.t.day, d) + 1; }
-  else if (g.mode === 'len') g.cur.len = Math.max(xpStep(), Math.min(1440, xpSnap(g.item.len + dy / geo.PX)));
+  else if (g.mode === 'len') g.cur.len = Math.max(xpStep(), Math.min(1440, xpSnap(geo.map.M(geo.map.Y(g.item.start + g.item.len) + dy) - g.item.start)));
   else if (g.mode === 'z') g.cur.effort = Math.max(g.item.kind === 'busy' ? 0 : 1, Math.min(5, Math.round(g.item.effort + (dx - dy) / Math.SQRT2 / Math.max(3, xpDepth() * .6))));
   if (!['tray', 'tpl'].includes(g.mode) || g.over) { if (ev.clientY < box.top + geo.head + 30) cal.scrollTop -= 14; else if (ev.clientY > box.bottom - 30) cal.scrollTop += 14; }   // near the edge: scroll
   xpDrawCal(); xpDrawMeters();

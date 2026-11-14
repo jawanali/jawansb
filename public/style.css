@@ -1029,6 +1029,12 @@ textarea{
 .xpwh{position:sticky;top:0;z-index:5000;display:flex;background:var(--panel);border-bottom:1px solid var(--line)}
 .xpwh button{background:none;border:0;border-left:1px solid var(--line);color:var(--mute);font:inherit;font-size:12px;letter-spacing:1px;cursor:pointer}
 .xpwh button{position:relative;overflow:hidden;white-space:nowrap}
+.xpfoldb{position:absolute;right:0;z-index:1;background:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--mute) 12%,transparent) 6px 7px);border-top:1px solid var(--line);border-bottom:1px solid var(--line);pointer-events:none}
+.xpfoldb span{position:absolute;left:-46px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--mute);width:44px;text-align:right;line-height:1.1}
+.xphm{display:inline-flex;gap:8px;align-items:center;flex-wrap:nowrap}.xphm label{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--mute);margin:0;letter-spacing:0;text-transform:none;white-space:nowrap}
+.xphm input{width:54px;text-align:right}
+.xpbar.s{position:relative}.xpbar.s u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.xpnew .xphm{flex:0 0 auto}.xpnew .xphm input,.xpmin .xphm input,.xpmini .xphm input{flex:0 0 54px;width:54px}.xpmini{width:340px}
 .xpwh button i{position:absolute;left:0;bottom:0;height:3px;background:color-mix(in srgb,var(--acc) 70%,transparent)}.xpwh button i.over{background:#c0503c}
 .xpctl{display:flex;align-items:center;gap:6px;font-size:12px}.xpctl>span{font-size:11px;letter-spacing:1.5px;color:var(--mute)}.xpctl b{min-width:18px;text-align:center}
 .xpwh button.today{color:var(--ink)}.xpwh button.on{color:var(--acc);box-shadow:inset 0 -2px 0 var(--acc)}
