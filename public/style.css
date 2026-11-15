@@ -1029,6 +1029,7 @@ textarea{
 .xpwh{position:sticky;top:0;z-index:5000;display:flex;background:var(--panel);border-bottom:1px solid var(--line)}
 .xpwh button{background:none;border:0;border-left:1px solid var(--line);color:var(--mute);font:inherit;font-size:12px;letter-spacing:1px;cursor:pointer}
 .xpwh button{position:relative;overflow:hidden;white-space:nowrap}
+.xpdchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.xpdchips .chip{display:inline-flex;align-items:center;gap:6px}.xpdx{background:none;border:0;font:inherit;font-size:11px;cursor:pointer;padding:0 0 0 2px;opacity:.75}.xpdx:hover{opacity:1}.xpdchips select{width:auto;flex:1 1 140px}
 .xpfoldb{position:absolute;right:0;z-index:1;background:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--mute) 12%,transparent) 6px 7px);border-top:1px solid var(--line);border-bottom:1px solid var(--line);pointer-events:none}
 .xpfoldb span{position:absolute;left:-46px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--mute);width:44px;text-align:right;line-height:1.1}
 .xphm{display:inline-flex;gap:8px;align-items:center;flex-wrap:nowrap}.xphm label{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--mute);margin:0;letter-spacing:0;text-transform:none;white-space:nowrap}
