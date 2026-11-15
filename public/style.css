@@ -1119,3 +1119,5 @@ textarea{
 .xpgL{left:0}.xpgR{right:0}
 .xpgt:hover,.xpgL:hover,.xpgR:hover{background:rgba(255,255,255,.25)}
 .xpb.cl .xpf{border-left:0}.xpb.cr .xpf{border-right:0}
+.xpsug{position:absolute;bottom:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;padding:2px 5px;text-decoration:none}
+.xpsugp{font-size:13px;margin:6px 0 0;color:var(--mute)}.xpsugp .link{margin-left:4px}
