@@ -42,7 +42,7 @@ const XP_PX = .8, XP_PX_MAX = 12;   // calendar pixels per minute: the starting 
 let xpPx = null, xpN = null, xpStart = null, xpUnfold = false;
 let xpSelIdx = null, xpScopeAll = false;   // a task running several days: which day you picked, and whether changes go to every day   // zoom, how many days you see, the first one
 let xpView = 'days', xpDate = null, xpSel = null, xpDoneForm = null, xpNotForm = null, xpRange = 'week', xpDrag = null, xpDepthLive = null;
-let xpNewDom = false, xpChest = false, xpMini = null, xpRolled = '', xpMigrated = false;
+let xpNewTimely = false, xpNewDom = false, xpChest = false, xpMini = null, xpRolled = '', xpMigrated = false;
 const xpRepMade = new Set();
 const xpScroll = {key: null, top: 0};   // where the calendar is scrolled to, kept across redraws
 document.addEventListener('scroll', ev => { if (ev.target.id === 'xpCal') xpScroll.top = ev.target.scrollTop; }, true);
@@ -58,6 +58,14 @@ const xpTimed = () => xpView === 'days';   // the view with hours down the side
 const xpId = p => p + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const xpTasks = () => all.filter(x => x.kind === 'task');
 const xpTpls = (arch = false) => all.filter(x => x.kind === 'tasktype' && !!x.archived === arch).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+// TIMELY blocks: {from, to, n}. They show only between those dates, and only until they've gone on the calendar n times
+// (a task marked not done gives its occurrence back)
+const xpUsed = p => xpTasks().filter(t => t.tpl === p.id && !t.skipped).length;
+const xpLeft = p => p.timely ? Math.max(0, (p.timely.n || 1) - xpUsed(p)) : Infinity;
+const xpNow = p => !p.timely || (xpLeft(p) > 0 && (!p.timely.from || p.timely.from <= xpToday()) && (!p.timely.to || xpToday() <= p.timely.to));
+const xpMD = k => new Date(k + 'T12:00').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+const xpNotNow = p => xpLeft(p) <= 0 ? 'USED UP' : p.timely.from && p.timely.from > xpToday() ? 'FROM ' + xpMD(p.timely.from).toUpperCase() : 'ENDED';
+const xpSec = (sec, arch) => arch ? [...xpTpls(true), ...xpTpls().filter(p => !xpNow(p))] : xpTpls().filter(p => !!p.timely === (sec === 't') && xpNow(p));
 const xpTplByTitle = t => all.find(x => x.kind === 'tasktype' && key(x.title) === key(t));
 const xpCfg = () => all.find(x => x.id === 'exprocfg') || {id: 'exprocfg', kind: 'exprocfg'};
 const xpDomains = () => uniq('types', [...(xpCfg().domains || XP_DOMAINS), ...ents().flatMap(e => tagsOf(e, 'types'))]);   // your domains + every EXP Type
@@ -386,16 +394,32 @@ const xpBlock3d = (o, cls, attrs, extra = '') => {
 function xpDrawTray() {
   const el = $('xpTray'); if (!el) return;
   const g = xpDrag && xpDrag.mode === 'tpl' && xpDrag.gridAt != null ? xpDrag : null;
-  let tp = xpTpls(xpChest);
-  if (g && !xpChest) { const it = tp.find(x => x.id === g.id); tp = tp.filter(x => x !== it); tp.splice(g.gridAt, 0, it); }   // live preview of the new order
   const c = xpCfg(), eff = [1, 2, 3, 4, 5].map(n => `<option value="${n}"${n === (c.lastEffort || 3) ? ' selected' : ''}>effort ${n}</option>`).join('');
-  const nArch = xpTpls(true).length;
-  el.innerHTML = `<div class="xpgw"><div class="xpgrid" id="xpGrid">${tp.map(t => { const ow = xpOwed(t); return xpBlock3d(t, 'xpt' + (g && g.id === t.id ? ' lifted' : '') + (ow.length ? ' owe' : ''), `data-xg="tpl"${ow.length ? ` title="Not done: ${esc(ow.map(x => xpWhen(x.skipped) + (x.skipped.why ? ' (' + x.skipped.why + ')' : '')).join('; '))}"` : ''}`, ow.length ? `<u class="xpowe">MAKE UP${ow.length > 1 ? ' ' + ow.length : ''}</u>` : ''); }).join('') || `<span class="mute">${xpChest ? 'The chest is empty.' : 'No tasks yet.'}</span>`}</div>
+  const blocks = sec => {
+    let tp = xpSec(sec, xpChest);
+    if (g && !xpChest && g.sec === sec) { const it = tp.find(x => x.id === g.id); tp = tp.filter(x => x !== it); tp.splice(g.gridAt, 0, it); }   // live preview of the new order
+    return tp.map(t => {
+      const ow = xpOwed(t), left = xpLeft(t), stk = t.timely && xpNow(t) ? Math.min(3, left) - 1 : 0, gone = t.timely && !xpNow(t);
+      const tip = [ow.length ? 'Not done: ' + ow.map(x => xpWhen(x.skipped) + (x.skipped.why ? ' (' + x.skipped.why + ')' : '')).join('; ') : '', t.timely ? `${t.timely.from ? xpMD(t.timely.from) : ''} - ${t.timely.to ? xpMD(t.timely.to) : ''}, ${left} of ${t.timely.n || 1} left` : ''].filter(Boolean).join('. ');
+      const f = xpFaces(xpCol(t.domain)), stack = stk > 0 ? ` style-stk="${[...Array(stk)].map((_, i) => `${(i + 1) * 5}px ${-(i + 1) * 5}px 0 -1px ${f.left}`).join(',')}"` : '';
+      return xpBlock3d(t, 'xpt' + (g && g.id === t.id ? ' lifted' : '') + (ow.length ? ' owe' : '') + (stk > 0 ? ' stk' : ''), `data-xg="tpl"${tip ? ` title="${esc(tip)}"` : ''}${stack}`,
+        (ow.length ? `<u class="xpowe">MAKE UP${ow.length > 1 ? ' ' + ow.length : ''}</u>` : '') + (gone ? `<u class="xpocc">${xpNotNow(t)}</u>` : t.timely ? `<u class="xpocc">${left} LEFT</u>` : ''));
+    }).join('');
+  };
+  const nArch = xpSec('', true).length, per = xpChest ? blocks('') : blocks('p'), tim = xpChest ? '' : blocks('t');
+  const nt = c => c ? '' : ' xpempty';
+  el.innerHTML = `<div class="xpgw"><div class="xpsecs">
+      ${xpChest ? `<div class="xpgrid" id="xpGrid">${per || '<span class="mute">The chest is empty.</span>'}</div>`
+        : `<div class="xpsec"><h4>PERPETUAL</h4><div class="xpgrid${nt(per)}" id="xpGrid">${per || '<span class="mute">Nothing yet.</span>'}</div></div>
+           <div class="xpsec"><h4>TIMELY</h4><div class="xpgrid${nt(tim)}" id="xpGridT">${tim || '<span class="mute">Nothing right now.</span>'}</div></div>`}</div>
       <button class="xpchest${xpChest ? ' open' : ''}${xpDrag && xpDrag.overChest ? ' drop' : ''}" id="xpChest" data-act="xpchest">${xpChest ? 'BACK TO<br>TASKS' : `CHEST<br><small>${nArch}</small>`}</button></div>
-    ${xpChest ? '' : `<div class="xpnew"><input id="xpNT" placeholder="New task" maxlength="80" autocomplete="off">
+    ${xpChest ? '' : `<div class="xpnew"><select id="xpNK"><option value="p">Perpetual</option><option value="t"${xpNewTimely ? ' selected' : ''}>Timely</option></select><input id="xpNT" placeholder="New task" maxlength="80" autocomplete="off">
       ${xpNewDom ? '<input id="xpNDn" class="xpnd" placeholder="New domain" maxlength="30" autocomplete="off">' : xpDomSelect(c.lastDomain || xpDomains()[0], 'id="xpND"')}
       ${xpHM(xpLastMin(), 'data-hm="new"')}
-      <select id="xpNF">${eff}</select><button class="go2" data-act="xpadd">ADD</button></div>`}`;
+      <select id="xpNF">${eff}</select>
+      ${xpNewTimely ? `<span class="xpnt"><label>From<input id="xpNA" type="date" value="${xpToday()}"></label><label>To<input id="xpNB" type="date" value="${xpShift(xpToday(), 6)}"></label><label>Times<input id="xpNN" type="number" min="1" max="99" value="1"></label></span>` : ''}
+      <button class="go2" data-act="xpadd">ADD</button></div>`}`;
+  el.querySelectorAll('[style-stk]').forEach(b => { b.style.setProperty('--stk', b.getAttribute('style-stk')); b.removeAttribute('style-stk'); });
   el.classList.toggle('drop', !!(xpDrag && xpDrag.toTray));
 }
 
@@ -617,11 +641,14 @@ function xpDrawSide() {
     h = `<h3>${p.archived ? 'IN THE CHEST' : 'TASK BLOCK'}</h3><input data-xp="title" value="${esc(p.title)}" maxlength="80">
       ${xpDomEdit(p, 'data-xp')}<label>Time</label>${xpHM(p.est, 'data-xp="est"')}
       <label>Effort</label>${xpRate('peffort', p.effort)}${xpSugLine(xpSuggest(p, p.effort), 'xpsugp')}
+      ${p.timely ? `<div class="two"><div><label>From</label><input data-xp="from" type="date" value="${p.timely.from || ''}"></div><div><label>To</label><input data-xp="to" type="date" value="${p.timely.to || ''}"></div></div>
+        <label>Times</label><input data-xp="n" type="number" min="1" max="99" value="${p.timely.n || 1}">
+        <p class="mute">On the calendar ${xpUsed(p)} of ${p.timely.n || 1}${xpNow(p) ? '' : '. ' + xpNotNow(p).toLowerCase().replace(/^./, m => m.toUpperCase())}</p>` : ''}
       ${xpNotesHtml(p)}
       <p class="mute">Done ${xpTasks().filter(x => x.done && (x.tpl === p.id || key(x.title) === key(p.title))).length} times</p>
       ${xpOwed(p).length ? `<h3>TO MAKE UP</h3>${xpOwed(p).map(x => `<div class="xpowed"><span>${xpWhen(x.skipped)}${x.skipped.why ? ', ' + esc(x.skipped.why) : ''}</span>
         <button class="link" data-act="xpback" data-v="${x.id}">Put back</button><button class="link" data-act="xpforgive" data-v="${x.id}">Forget it</button></div>`).join('')}` : ''}
-      <div class="xplinks"><button class="link" data-act="xparch">${p.archived ? 'Take out of the chest' : 'Put in the chest'}</button>
+      <div class="xplinks"><button class="link" data-act="xptimely">${p.timely ? 'Make it perpetual' : 'Make it timely'}</button><button class="link" data-act="xparch">${p.archived ? 'Take out of the chest' : 'Put in the chest'}</button>
         <button class="link" data-act="xpdel" data-v="${p.id}">Delete</button><button class="link" data-act="xpdesel">Close</button></div>`;
   }
   else if (bf) {
@@ -712,6 +739,7 @@ document.addEventListener('click', ev => {
   let t = xpTasks().find(x => x.id === xpSel);
   if (['xpsubadd', 'xpsubdel', 'xpdoneopen', 'xpnotopen', 'xpunsched', 'xpshare', 'xpdel', 'xpdomrm', 'xpsugt'].includes(a) || (a === 'xprate' && b.dataset.k === 'teffort')) t = xpPick(t);
   if (a === 'xpsugt' && t) { xpSaveTask(t.id, {effort: +v}); return; }
+  if (a === 'xptimely' && p) { xpSave({...p, timely: p.timely ? undefined : {from: xpToday(), to: xpShift(xpToday(), 6), n: 1}}); return; }
   if (a === 'xpsugp' && p) { xpSave({...p, effort: +v}); return; }
   if (a === 'xpscope') { xpScopeAll = v === 'all'; xpDrawSide(); xpDrawCal(); return; }
   if (a === 'xpday') {
@@ -812,15 +840,21 @@ function xpAdd() {   // the form under the grid: a new permanent task block, top
   if (xpTplByTitle(title)) { flash(`"${title}" is already one of your tasks`); return; }
   const hmEl = document.querySelector('[data-hm="new"]'), est = xpReadHM(hmEl); if (!est) { flash('Enter the hours and minutes'); hmEl.focus(); return; }
   const domain = xpNewDom ? $('xpNDn').value.trim() : $('xpND').value; if (!domain) { $('xpNDn').focus(); return; }
-  const effort = +$('xpNF').value;
+  const effort = +$('xpNF').value, n = xpNewTpl({title, domain, est, effort});
+  if (xpNewTimely) {
+    const from = $('xpNA').value, to = $('xpNB').value, k = Math.round(+$('xpNN').value);
+    if (!from || !to || to < from) { flash('Pick a date range'); $('xpNB').focus(); return; }
+    if (!(k >= 1)) { flash('How many times?'); $('xpNN').focus(); return; }
+    n.timely = {from, to, n: Math.min(99, k)};
+  }
   xpNewDom = false;
-  xpSave([xpNewTpl({title, domain, est, effort}), {...xpCfg(), ...xpAddDomain(domain), lastDomain: domain, lastMin: est, lastEffort: effort}]);
+  xpSave([n, {...xpCfg(), ...xpAddDomain(domain), lastDomain: domain, lastMin: est, lastEffort: effort}], n.timely && !xpNow(n) ? `"${title}" shows up on ${xpMD(n.timely.from)}` : undefined);
   setTimeout(() => $('xpNT') && $('xpNT').focus({preventScroll: true}));
 }
 /* --- typing --- */
 document.addEventListener('keydown', ev => {
   if (page !== 'expro') return;
-  if (ev.key === 'Enter' && (['xpNT', 'xpNDn'].includes(ev.target.id) || ev.target.dataset.hm === 'new')) { ev.preventDefault(); xpAdd(); }
+  if (ev.key === 'Enter' && (['xpNT', 'xpNDn', 'xpNN'].includes(ev.target.id) || ev.target.dataset.hm === 'new')) { ev.preventDefault(); xpAdd(); }
   if (ev.key === 'Enter' && ev.target.closest('#xpMini')) { ev.preventDefault(); xpMiniAdd(); }
   if (ev.key === 'Enter' && ev.target.id === 'xpSubN') { ev.preventDefault(); document.querySelector('[data-act="xpsubadd"]').click(); }
   if (ev.key === 'Enter' && ev.target.dataset.xsubt) { ev.preventDefault(); ev.target.blur(); }
@@ -846,6 +880,7 @@ document.addEventListener('change', ev => {
   let t = xpTasks().find(x => x.id === xpSel);
   if (t && (e.dataset.xf || e.dataset.xnote || e.dataset.xsub || e.dataset.xsubt)) t = xpPick(t);   // one day of several: it becomes its own task first
   if (e.id === 'xpDepth') { xpDepthLive = null; xpSaveCfg({depth: +v}); }
+  else if (e.id === 'xpNK') { const keep = $('xpNT').value, tm = xpReadHM(document.querySelector('[data-hm="new"]')); xpNewTimely = v === 't'; xpDrawTray(); $('xpNT').value = keep; xpSetHM(document.querySelector('[data-hm="new"]'), tm); (keep ? $('xpNA') || $('xpNT') : $('xpNT')).focus(); }
   else if (e.id === 'xpND' && v === '__new') { const keep = $('xpNT').value, tm = xpReadHM(document.querySelector('[data-hm="new"]')); xpNewDom = true; xpDrawTray(); $('xpNT').value = keep; xpSetHM(document.querySelector('[data-hm="new"]'), tm); $('xpNDn').focus(); }
   else if (e.id === 'xmD' && v === '__new') { e.outerHTML = '<input id="xmDn" placeholder="New domain" maxlength="30">'; $('xmDn').focus(); }
   else if (e.id === 'xmD' && xpMini) { xpMini.domain = v; xpDrawCal(); }
@@ -864,6 +899,8 @@ document.addEventListener('change', ev => {
     else if (k === 'domainAdd' && v) put1(xpDomPatch([...xpDoms(o), v]));
     else if (k === 'domainNew' && v.trim()) xpSave([{...o, ...xpDomPatch([...xpDoms(o), v.trim()])}, {...xpCfg(), ...xpAddDomain(v)}]);
     else if (k === 'est') { const m = xpReadHM(e); if (m) put1({est: m}); else flash('Enter the hours and minutes'); }
+    else if (['from', 'to'].includes(k) && p && p.timely && v) put1({timely: {...p.timely, [k]: v}});
+    else if (k === 'n' && p && p.timely && +v >= 1) put1({timely: {...p.timely, n: Math.min(99, Math.round(+v))}});
     else if (k === 'span' && +v >= 1) put1({span: Math.min(31, Math.round(+v))});
     else if (k === 'day') v ? put1({day: v}) : xpOffCal([t], false, `"${t.title}" is off the calendar`);
     else if (k === 'start') v ? put1({start: hm(v), day: t.day || xpDate}) : xpOffCal([t], false, `"${t.title}" is off the calendar`);
@@ -903,16 +940,17 @@ document.addEventListener('pointermove', ev => {
   const cal = $('xpCal'), under = xpUnder(ev);
   if (g.mode === 'tpl') {   // over the grid: make room at that spot; over the chest: it lights up
     g.overChest = !!(under && under.closest('#xpChest'));
-    const grid = $('xpGrid'), gr = grid.getBoundingClientRect(), inGrid = !xpChest && ev.clientX > gr.left && ev.clientX < gr.right && ev.clientY > gr.top && ev.clientY < gr.bottom;
+    const sec = xpChest ? '' : all.find(x => x.id === g.id)?.timely ? 't' : 'p'; g.sec = sec;
+    const grid = $(sec === 't' ? 'xpGridT' : 'xpGrid'), gr = grid.getBoundingClientRect(), inGrid = !xpChest && ev.clientX > gr.left && ev.clientX < gr.right && ev.clientY > gr.top && ev.clientY < gr.bottom;
     const prev = g.gridAt;
-    if (inGrid) { const kids = [...grid.children]; g.gridAt = kids.findIndex(k => { const r = k.getBoundingClientRect(); return ev.clientY < r.top || (ev.clientY < r.bottom && ev.clientX < r.left + r.width / 2); }); if (g.gridAt < 0) g.gridAt = kids.length - 1; }
+    if (inGrid) { const kids = [...grid.children].filter(k => k.dataset.xid); g.gridAt = kids.findIndex(k => { const r = k.getBoundingClientRect(); return ev.clientY < r.top || (ev.clientY < r.bottom && ev.clientX < r.left + r.width / 2); }); if (g.gridAt < 0) g.gridAt = kids.length - 1; }
     else g.gridAt = null;
     if (prev !== g.gridAt || g.overChest !== g.wasChest) { g.wasChest = g.overChest; xpDrawTray(); }
     if (inGrid || g.overChest) { g.over = false; xpGhost(ev, g, true); return; }
   }
   if (g.mode === 'tray') {   // a "No time yet" task over the grid or the chest: it goes back there
     const was = g.overChest; g.overChest = !!(under && under.closest('#xpChest'));
-    const gr = $('xpGrid').getBoundingClientRect(); g.overGrid = !xpChest && ev.clientX > gr.left && ev.clientX < gr.right && ev.clientY > gr.top && ev.clientY < gr.bottom;
+    g.overGrid = !xpChest && ['xpGrid', 'xpGridT'].some(i => { const gr = $(i).getBoundingClientRect(); return ev.clientX > gr.left && ev.clientX < gr.right && ev.clientY > gr.top && ev.clientY < gr.bottom; });
     if (was !== g.overChest) xpDrawTray();
     if (g.overGrid || g.overChest) { g.over = false; xpGhost(ev, g, false); xpDrawCal(); return; }
   }
@@ -972,12 +1010,13 @@ document.addEventListener('pointerup', () => {
     const p = all.find(x => x.id === g.id);
     if (g.overChest) return xpSave(xpChest ? {...p, archived: false, order: xpNewTpl(p).order} : {...p, archived: true}, xpChest ? `"${p.title}" is back in your tasks` : `"${p.title}" is in the chest`);
     if (g.gridAt != null) {   // a new order for the whole grid
-      const l = xpTpls().filter(x => x.id !== g.id); l.splice(g.gridAt, 0, p);
+      const l = xpSec(g.sec).filter(x => x.id !== g.id); l.splice(g.gridAt, 0, p);
       return xpSave(l.map((x, i) => ({...x, order: i})));
     }
     const lastAt = [...xpTasks()].reverse().find(x => key(x.title) === key(p.title) && x.start != null);   // on the month: at the time you last did it (or 9am)
     const at = xpView === 'month' ? (g.overDay ? {day: g.overDay, start: lastAt ? lastAt.start : 540} : null) : g.over ? {day: g.cur.day, start: g.cur.start} : null;
     if (!at) return renderExpro();
+    if (xpLeft(p) <= 0) { flash(`"${p.title}" has no times left`); return renderExpro(); }
     const id = xpId('t'); xpSel = id;
     return xpSave({...xpFromTpl(p), id, kind: 'task', is_public: false, title: p.title, domain: p.domain, est: p.est, effort: p.effort, tpl: p.id, makeup: xpOwed(p)[0]?.id, ...at, created: new Date().toISOString()});
   }

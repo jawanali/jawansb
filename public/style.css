@@ -1121,3 +1121,10 @@ textarea{
 .xpb.cl .xpf{border-left:0}.xpb.cr .xpf{border-right:0}
 .xpsug{position:absolute;bottom:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;padding:2px 5px;text-decoration:none}
 .xpsugp{font-size:13px;margin:6px 0 0;color:var(--mute)}.xpsugp .link{margin-left:4px}
+.xpsecs{display:grid;gap:4px;min-width:0}
+.xpsec h4{margin:0 0 4px;font-size:11px;letter-spacing:1.5px;color:var(--mute);font-weight:600}
+.xpsec .xpgrid{max-height:150px}.xpsec .xpgrid.xpempty{grid-auto-rows:auto;padding-bottom:8px}
+.xpt.stk{box-shadow:var(--stk)}.xpt.owe.stk{box-shadow:inset 4px 0 #c0503c,var(--stk)}
+.xpocc{position:absolute;bottom:0;left:0;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;padding:2px 5px;text-decoration:none}
+.xpnt{display:flex;gap:6px;flex-wrap:wrap}.xpnt label{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mute);margin:0}
+.xpnt input{width:auto}.xpnt input[type=number]{width:54px}
