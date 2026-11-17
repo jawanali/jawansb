@@ -30,6 +30,7 @@
     </h1>
     
 <div class="hr">
+  <button class="link actb" id="actBtn" data-act="actlog" hidden>Activity<b id="actN" hidden></b></button>
   <span id="status" class="pill">Loading…</span>
   <button class="link" id="lock" data-act="lock"></button>
   <button class="ib" id="gear" data-act="settings" aria-label="Settings">
@@ -125,7 +126,8 @@
     <button class="link" data-act="close" style="display:block;margin:12px auto 0">Cancel</button>
   </div>
 </div>
-<div id="toast" class="toast" hidden></div>
+<div id="toast" class="toast" hidden data-act="actlog"></div>
+<aside id="actLog" class="actlog" hidden><div class="acth"><b>ACTIVITY LOG</b><button class="link" data-act="actclear">Clear</button><button class="link" data-act="actclose">Close</button></div><ul id="actList"></ul></aside>
 <div id="login" class="ov" hidden><div class="modal">
   <h3 class="mh">Owner login</h3>
   <label>Email</label><input id="lemail" type="email" autocomplete="username">

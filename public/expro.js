@@ -159,6 +159,7 @@ async function xpSave(l, msg) {
   const {error} = await go;
   if (error) { flash('Save failed: ' + error.message); load(); return false; }
   if (msg) flash(msg);
+  else { const n = [...new Set(l.filter(o => o.title).map(o => `"${o.title}"`))]; if (n.length) actQuiet('Saved ' + n.slice(0, 3).join(', ') + (n.length > 3 ? ` and ${n.length - 3} more` : '')); }   // quiet: written in the activity log only
   return true;
 }
 async function xpDelete(ids) {
@@ -170,6 +171,7 @@ async function xpDelete(ids) {
   render();
   const {error} = await sb.from('items').delete().in('id', ids);
   if (error) { flash('Delete failed: ' + error.message); load(); }
+  else actQuiet(`Deleted ${ids.length > 1 ? ids.length + ' items' : 'an item'}`);
 }
 const xpSaveDay = (patch, k = xpDate) => xpSave({...xpDay(k), ...patch});
 const xpSaveCfg = (patch, msg) => xpSave({...xpCfg(), ...patch}, msg);

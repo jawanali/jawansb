@@ -56,7 +56,36 @@ const chip = (k, n) => `<span class="chip" style="${ts(k, n)}" data-act="tagflt"
 const SB_URL = 'https://kbrizeqpoiqgimewxixw.supabase.co', SB_KEY = 'sb_publishable_sGD5U1QpwoL4Aa4zO28c4w_0IjhUAJm';
 const sb = window.supabase ? supabase.createClient(SB_URL, SB_KEY) : null;
 let owner = false;   // true only while you are logged in
-const flash = t => { $('toast').textContent = t; $('toast').hidden = false; setTimeout(() => $('toast').hidden = true, 5000); };
+/* --- ACTIVITY LOG: everything that happens gets a line here. Messages pop up as a small card in the top-right corner
+       (click it to open the log); quiet saves (dragging, editing) are only written down. Only you see the log: it's kept in
+       your own browser, and only while you're logged in, so visitors get nothing stored. --- */
+let actLog = null, actSeen = 0, actTimer = 0;
+const actLoad = () => { if (actLog) return actLog; actLog = []; if (owner) try { actLog = JSON.parse(localStorage.getItem('jsbLog')) || []; actSeen = actLog.length; } catch (e) {} return actLog; };
+function actAdd(text, kind) {
+  const l = actLoad(); l.push({t: text, at: Date.now(), k: kind});
+  if (l.length > 300) { actSeen -= l.length - 300; l.splice(0, l.length - 300); }
+  if (owner) try { localStorage.setItem('jsbLog', JSON.stringify(l)); } catch (e) {}
+  actDraw();
+}
+const actQuiet = t => actAdd(t, 'q');
+function flash(t) {
+  const err = /failed|could not/i.test(t);
+  actAdd(t, err ? 'err' : '');
+  const n = $('toast'); n.className = 'toast' + (err ? ' err' : '');
+  n.innerHTML = `<small>${owner ? 'ACTIVITY LOG' : 'NOTE'}</small><span></span>`; n.lastChild.textContent = t;
+  n.hidden = false; n.classList.remove('in'); void n.offsetWidth; n.classList.add('in');
+  clearTimeout(actTimer); actTimer = setTimeout(() => { n.classList.remove('in'); setTimeout(() => { if (!n.classList.contains('in')) n.hidden = true; }, 250); }, err ? 8000 : 3500);
+}
+const actWhen = at => { const d = new Date(at), today = new Date().toDateString() === d.toDateString();
+  return (today ? '' : d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) + ' ') + d.toLocaleTimeString(undefined, {hour: 'numeric', minute: '2-digit'}); };
+function actDraw() {
+  const b = $('actBtn'); if (!b) return;
+  const l = actLoad(), open = !$('actLog').hidden;
+  if (open) actSeen = l.length;
+  b.hidden = !owner; const n = l.length - actSeen; $('actN').textContent = n > 0 ? n : ''; $('actN').hidden = n <= 0;
+  if (open) $('actList').innerHTML = l.length ? [...l].reverse().map(x => `<li class="${x.k || ''}"><time>${actWhen(x.at)}</time><span>${esc(x.t)}</span></li>`).join('') : '<li class="mute">Nothing yet.</li>';
+}
+const actToggle = show => { $('actLog').hidden = !(show ?? $('actLog').hidden); $('toast').hidden = true; actDraw(); };
 const toDoc = r => ({...r.data, id: r.id, is_public: r.is_public, kind: r.kind === 'entry' ? undefined : r.kind});
 async function load() {
   if (!sb) { $('status').textContent = 'Could not load Supabase'; return; }
@@ -79,6 +108,7 @@ const row = ({id, kind, is_public, ...rest}) => ({id, kind: kind || 'entry', is_
 async function put(o) {
   const {error} = await sb.from('items').upsert(row(o));
   if (error) { flash('Save failed: ' + error.message); return false; }
+  if (o.title) actQuiet(`Saved "${o.title}"`);
   await load(); return true;
 }
 /* --- NUMBERS: every experience and every post gets a permanent number used in its link (/exp/1, /blog/1).
@@ -331,7 +361,7 @@ function render() {
   $('pgList').hidden = !list; $('pgSet').hidden = page !== 'set'; $('pgPort').hidden = page !== 'port'; $('pgStats').hidden = page !== 'stats';
   $('pgNews').hidden = !['news', 'write', 'design'].includes(page); $('pgExpro').hidden = page !== 'expro';
   drawIntro(); drawNlBar();
-  $('fab').hidden = !list || !owner; $('gear').hidden = !owner; $('status').hidden = !owner; $('status').textContent = 'Owner mode'; $('lock').textContent = owner ? 'Log out' : 'Owner login'; $('fab').textContent = page === 'blog' ? '+ Blog' : '+ Log';
+  $('fab').hidden = !list || !owner; $('gear').hidden = !owner; $('status').hidden = !owner; $('status').textContent = 'Owner mode'; actDraw(); $('lock').textContent = owner ? 'Log out' : 'Owner login'; $('fab').textContent = page === 'blog' ? '+ Blog' : '+ Log';
   $('nvP').classList.toggle('cur', page === 'port'); $('nvE').classList.toggle('cur', page === 'exp' || page === 'set' || page === 'stats'); $('nvB').classList.toggle('cur', page === 'blog');
   $('nvX').hidden = !owner; $('nvX').classList.toggle('cur', page === 'expro');
   // top cards show the filtered numbers while a filter is on
@@ -854,8 +884,7 @@ function route() {
 const nav = path => { history.pushState(null, '', path); route(); scrollTo(0, 0); };
 async function copyLink(v) {
   const u = BASE + v;
-  try { await navigator.clipboard.writeText(u); $('toast').textContent = 'Link copied: ' + u; } catch (e) { $('toast').textContent = u; }
-  $('toast').hidden = false; setTimeout(() => $('toast').hidden = true, 6000);
+  try { await navigator.clipboard.writeText(u); flash('Link copied: ' + u); } catch (e) { flash(u); }
 }
 
 /* --- CLICKS: one listener handles every button, based on its data-act label --- */
@@ -900,6 +929,9 @@ document.addEventListener('click', ev => {
   else if (a === 'edit') { const x = all.find(y => y.id === v); if (x) openModal(x.kind === 'post' ? 'b' : 'e', x); }
   else if (a === 'link') copyLink(v);
   else if (a === 'unfocus') nav('/' + page);
+  else if (a === 'actlog') { if (owner) actToggle(); else $('toast').hidden = true; }
+  else if (a === 'actclose') actToggle(false);
+  else if (a === 'actclear') { actLog = []; actSeen = 0; try { localStorage.removeItem('jsbLog'); } catch (e) {} actDraw(); }
   else if (a === 'lock') { if (owner) { sb.auth.signOut(); nav('/exp'); } else { $('login').hidden = false; $('lemail').focus(); } }
   else if (a === 'dologin') doLogin();
   else if (a === 'closelogin') $('login').hidden = true;
