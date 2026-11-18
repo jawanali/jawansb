@@ -348,12 +348,13 @@ function renderExpro() {
     <div class="xphead">
       <div class="xpdate"><button class="ib" data-act="xpday" data-v="-1" aria-label="Back">&larr;</button><b>${esc(lbl)}</b><button class="ib" data-act="xpday" data-v="1" aria-label="Forward">&rarr;</button>${xpRangeDays().includes(today) ? '' : '<button class="link" data-act="xpday" data-v="0">Today</button>'}</div>
       <div class="xptabs">${tab('days', 'Days')}${tab('month', 'Month')}${tab('domains', 'Domains')}</div>
-      ${xpTimed() ? `<div class="xpctl"><span>DAYS</span><button class="ib" data-act="xpn" data-v="-1" aria-label="Fewer days">-</button><b>${xpN}</b><button class="ib" data-act="xpn" data-v="1" aria-label="More days">+</button></div>
-        <div class="xpctl"><span>ZOOM</span><button class="ib" data-act="xpzoom" data-v="out" aria-label="Zoom out">-</button><button class="ib" data-act="xpzoom" data-v="in" aria-label="Zoom in">+</button><button class="link" data-act="xpzoom" data-v="fit">Whole day</button><button class="link" data-act="xpunfold">${xpUnfold ? 'Fold sleep' : 'Show sleep'}</button></div>` : ''}
       ${xpTimed() ? `<label class="xpdepth">3D <input type="range" id="xpDepth" min="0" max="16" value="${xpDepth()}"></label>` : ''}
     </div>
     ${cal ? `<div class="xptop"><div class="xpmeters" id="xpMeters"></div><div class="xptray" id="xpTray"></div></div>
-      <div class="xpbody"><div class="xpcal${xpView === 'month' ? ' month' : ''}" id="xpCal"></div><aside class="xpside" id="xpSide"></aside></div>`
+      <div class="xpbody"><div class="xpcalw"><div class="xpcal${xpView === 'month' ? ' month' : ''}" id="xpCal"></div>
+        ${xpTimed() ? `<div class="xpzbar"><label>WIDTH<input type="range" id="xpZW" min="1" max="14" step="1" value="${15 - xpN}" aria-label="Zoom the width (fewer days)"><b id="xpZWv">${xpN} day${xpN > 1 ? 's' : ''}</b></label>
+          <label>HEIGHT<input type="range" id="xpZH" min="0" max="1000" step="1" value="${xpZHval()}" aria-label="Zoom the height (the hours)"></label>
+          <span><button class="link" data-act="xpzoom" data-v="fit">Whole day</button><button class="link" data-act="xpunfold">${xpUnfold ? 'Fold sleep' : 'Show sleep'}</button></span></div>` : ''}</div><aside class="xpside" id="xpSide"></aside></div>`
       : `<div id="xpStats"></div>`}
   </div>`;
   if (cal) { xpDrawMeters(); xpDrawTray(); xpDrawCal(); xpDrawSide(); }
@@ -456,6 +457,7 @@ function xpDrawCal() {
   }));
   el.innerHTML = `<div class="xpplane" id="xpPlane" style="height:${head + pad + map.H + 16}px">${h}</div>`;
   el._geo = {pad, gut, colW, PX, days, head, map};
+  const zh = $('xpZH'); if (zh && document.activeElement !== zh) zh.value = xpZHval();   // pinching moves the slider too
   xpScroll.key = keyNow;
   if (old != null) el.scrollTop = old;   // keep your place when redrawing; the first time, start near now (or the first task, or 7am)
   else {
@@ -491,6 +493,9 @@ function xpDayBar(d) {   // under each day's name: that day's planned energy aga
 }
 function xpDayTip(d) { const s = xpTotals([d]), mo = xpMaxOn(d), b = s.busyMin + s.used, f = 1440 - s.sleep - b; return `Sleep: ${xpSleepTxt(mo.n)}. ${sdur(b)} booked, ${f < 0 ? sdur(-f) + ' double-booked' : sdur(f) + ' free'}. Energy ${num1(s.planE)} of ${mo.max}`; }
 /* --- zoom and moving through days --- */
+// the HEIGHT slider runs from the whole day (left) to the closest zoom (right), evenly by ratio
+const xpZHval = () => { const lo = xpPxMin(), px = Math.max(lo, Math.min(XP_PX_MAX, xpPx || XP_PX)); return Math.round(Math.log(px / lo) / Math.log(XP_PX_MAX / lo) * 1000); };
+const xpZHpx = v => { const lo = xpPxMin(); return lo * Math.pow(XP_PX_MAX / lo, v / 1000); };
 let xpZoomF = 1, xpZoomY = null, xpZoomRaf = 0, xpSwipe = 0, xpSwipeT = 0, xpViewT = 0;
 function xpZoom(f, cy) {   // zoom the hours, keeping the time under the pointer (or the middle) where it is
   xpZoomF *= f; xpZoomY = cy;
@@ -871,6 +876,8 @@ document.addEventListener('keydown', ev => {
 });
 document.addEventListener('input', ev => {
   if (page !== 'expro') return;
+  if (ev.target.id === 'xpZH') { const cal = $('xpCal'), g = cal && cal._geo; if (g) xpZoom(xpZHpx(+ev.target.value) / g.PX / xpZoomF); }
+  if (ev.target.id === 'xpZW') { xpN = 15 - +ev.target.value; $('xpZWv').textContent = xpN + ' day' + (xpN > 1 ? 's' : ''); xpDrawCal(); }
   if (ev.target.id === 'xpDepth') { xpDepthLive = +ev.target.value; xpDrawCal(); xpDrawTray(); }
   if (ev.target.id === 'xmT') xpMiniFill();
   if (ev.target.dataset.hm === 'done' && xpDoneForm) { xpDoneForm.min = xpReadHM(ev.target); const b = document.querySelector('[data-act="xpdone"]'); if (b) b.textContent = `SAVE, +${xpDoneForm.min} EXP`; }
@@ -881,6 +888,7 @@ document.addEventListener('change', ev => {
   const e = ev.target, v = e.value, p = all.find(x => x.id === xpSel && x.kind === 'tasktype');
   let t = xpTasks().find(x => x.id === xpSel);
   if (t && (e.dataset.xf || e.dataset.xnote || e.dataset.xsub || e.dataset.xsubt)) t = xpPick(t);   // one day of several: it becomes its own task first
+  if (e.id === 'xpZW') return xpSetN(15 - +v);
   if (e.id === 'xpDepth') { xpDepthLive = null; xpSaveCfg({depth: +v}); }
   else if (e.id === 'xpNK') { const keep = $('xpNT').value, tm = xpReadHM(document.querySelector('[data-hm="new"]')); xpNewTimely = v === 't'; xpDrawTray(); $('xpNT').value = keep; xpSetHM(document.querySelector('[data-hm="new"]'), tm); (keep ? $('xpNA') || $('xpNT') : $('xpNT')).focus(); }
   else if (e.id === 'xpND' && v === '__new') { const keep = $('xpNT').value, tm = xpReadHM(document.querySelector('[data-hm="new"]')); xpNewDom = true; xpDrawTray(); $('xpNT').value = keep; xpSetHM(document.querySelector('[data-hm="new"]'), tm); $('xpNDn').focus(); }

@@ -1126,3 +1126,9 @@ textarea{
 .xpocc{position:absolute;bottom:0;left:0;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;padding:2px 5px;text-decoration:none}
 .xpnt{display:flex;gap:6px;flex-wrap:wrap}.xpnt label{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mute);margin:0}
 .xpnt input{width:auto}.xpnt input[type=number]{width:54px}
+.xpcalw{min-width:0}
+.xpzbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 24px;margin-top:10px;font-size:11px;letter-spacing:1.5px;color:var(--mute)}
+.xpzbar label{display:flex;align-items:center;gap:10px;margin:0;flex:1 1 220px;font-size:11px;letter-spacing:1.5px;color:var(--mute)}
+.xpzbar input[type=range]{flex:1;padding:0;min-width:80px}
+.xpzbar b{font-weight:600;color:var(--ink);letter-spacing:0;min-width:50px}
+.xpzbar span{display:flex;gap:14px;letter-spacing:0}
